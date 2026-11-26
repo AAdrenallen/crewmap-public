@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<title>CrewMap</title>
+<style>
+:root { --bg: #f4f5fb; --fg: #0e1220; --soft: #5b6275; --accent: #5b6cff; --on: #fff; --line: #d8dbe8; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0e1220; --fg: #f2f3f8; --soft: #9aa1b5; --line: #2a3047; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--fg); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { width: 100%; max-width: 360px; padding: 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+h1 { margin: 0; font-size: 22px; overflow-wrap: anywhere; }
+a.btn { display: block; width: 100%; padding: 16px; border-radius: 14px; text-decoration: none; font-weight: 600; font-size: 18px; }
+#get { background: var(--accent); color: var(--on); }
+#open { border: 1px solid var(--line); color: var(--fg); font-size: 16px; padding: 12px; }
+p { margin: 0; color: var(--soft); font-size: 14px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+<svg width="72" height="72" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4C20.4 4 11 13.2 11 24.6 11 40 32 60 32 60s21-20 21-35.4C53 13.2 43.6 4 32 4z" fill="#5b6cff"/><circle cx="24" cy="25" r="4.5" fill="#fff"/><circle cx="32" cy="18" r="4.5" fill="#fff"/><circle cx="40" cy="25" r="4.5" fill="#fff"/></svg>
+<h1 id="name" hidden></h1>
+<a class="btn" id="get" href="https://github.com/AAdrenallen/crewmap-public/releases/download/preview/CrewMap-Preview.apk">Install CrewMap</a>
+<a class="btn" id="open" hidden>Open</a>
+<p id="hint">Then open CrewMap</p>
+</main>
+<script>
+(function () {
+  // The invite token stays in the fragment: never sent to any server, never fetched. Nothing here makes a request.
+  var PKG = 'app.crewmap.preview';
+  var m = /^#([A-Za-z0-9_-]+)$/.exec(location.hash);
+  var tok = m ? m[1] : '';
+  var page = location.origin + location.pathname;
+  var share = tok ? page + '#' + tok : '';
+  var android = /Android/i.test(navigator.userAgent);
+  var T = {
+    en: ['Install CrewMap', 'Open', 'Then open CrewMap'],
+    fr: ['Installer CrewMap', 'Ouvrir', 'Puis ouvre CrewMap'],
+    ru: ['Установить CrewMap', 'Открыть', 'Затем открой CrewMap'],
+  };
+  var lang = String(navigator.language || 'en').slice(0, 2);
+  var s = T[lang] || T.en;
+  var $ = function (id) { return document.getElementById(id); };
+  $('get').textContent = s[0];
+  $('open').textContent = s[1];
+  $('hint').textContent = s[2];
+  document.documentElement.lang = T[lang] ? lang : 'en';
+
+  // Crew name, decoded locally from the token (base64url JSON, field `n`).
+  try {
+    var b = tok.replace(/-/g, '+').replace(/_/g, '/');
+    while (b.length % 4) b += '=';
+    var raw = atob(b);
+    var u = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+    var n = JSON.parse(new TextDecoder().decode(u)).n;
+    if (typeof n === 'string' && n) {
+      $('name').textContent = n.slice(0, 40);
+      $('name').hidden = false;
+    }
+  } catch (e) {}
+
+  if (!tok) return;
+  // App installed: Android opens it with crewmap://join#<token>. Not installed: back here (?o=1 stops a loop).
+  var intent = 'intent://join#' + tok + '#Intent;scheme=crewmap;package=' + PKG +
+    ';S.browser_fallback_url=' + encodeURIComponent(page + '?o=1#' + tok) + ';end';
+  if (android) {
+    $('open').href = intent;
+    $('open').hidden = false;
+    if (!/[?&]o=1\b/.test(location.search)) location.href = intent;
+  }
+
+  // Installing: put the invite on the clipboard so the app's first launch picks it up (it still asks before joining).
+  function copyFallback() {
+    var ta = document.createElement('textarea');
+    ta.value = share;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  $('get').onclick = function () {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(share).catch(copyFallback);
+      else copyFallback();
+    } catch (e) {
+      copyFallback();
+    }
+  };
+})();
+</script>
+</body>
+</html>
