@@ -17,9 +17,9 @@ const lines = JSON.parse(readFileSync(join(root, 'tools/voice/lines.json'), 'utf
 
 // Voice per language: model, pitch factor (< 1 = deeper) and speaking speed (length_scale < 1 = faster).
 const VOICES = {
-  en: { model: 'en_US-norman-medium', pitch: 0.9, speed: 0.82 },
-  fr: { model: 'fr_FR-gilles-low', pitch: 0.88, speed: 0.8 },
-  ru: { model: 'ru_RU-denis-medium', pitch: 0.82, speed: 0.8 },
+  en: { model: 'en_US-norman-medium', pitch: 1.06, speed: 0.78 },
+  fr: { model: 'fr_FR-gilles-low', pitch: 1.04, speed: 0.78 },
+  ru: { model: 'ru_RU-denis-medium', pitch: 1.0, speed: 0.78 },
 };
 const MAX_S = 2;
 
@@ -57,12 +57,13 @@ for (const [lang, v] of Object.entries(VOICES)) {
       ff(['-i', raw, '-af', 'silenceremove=start_periods=1:start_threshold=-40dB,areverse,silenceremove=start_periods=1:start_threshold=-40dB,areverse', trimmed]);
       const dur = Number(execFileSync(ffmpeg.replace(/ffmpeg\.exe$/, 'ffprobe.exe'), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', trimmed]).toString());
       // Over-long lines are sped up (announcer patter) rather than cut, leaving room for the reverb tail.
-      const tempo = Math.max(1, dur / (MAX_S - 0.2)) / v.pitch;
+      const pitch = v.pitch * (1 + (((i * 7 + preset.length) % 5) - 2) * 0.035); // per-line variation (lively, sing-song)
+      const tempo = Math.max(1, dur / (MAX_S - 0.2)) / pitch;
       const chain = [
-        `asetrate=${Math.round(m.sr * v.pitch)},aresample=${m.sr},atempo=${Math.min(2, tempo).toFixed(3)}`,
-        'volume=2.2,asoftclip=type=tanh,volume=0.6',
-        'highpass=f=300,lowpass=f=3600,equalizer=f=1800:t=q:w=1.2:g=5',
-        'aecho=0.8:0.5:45|90:0.25|0.12',
+        `asetrate=${Math.round(m.sr * pitch)},aresample=${m.sr},atempo=${Math.min(2, tempo).toFixed(3)}`,
+        'acompressor=threshold=-24dB:ratio=3:attack=5:release=80,volume=1.4',
+        'highpass=f=200,lowpass=f=7000,equalizer=f=3200:t=q:w=1.0:g=4',
+        'aecho=0.8:0.4:35:0.12',
         'loudnorm=I=-16:TP=-1.5:LRA=7',
         `atrim=0:${MAX_S},afade=t=out:st=${MAX_S - 0.08}:d=0.08`,
       ].join(',');
