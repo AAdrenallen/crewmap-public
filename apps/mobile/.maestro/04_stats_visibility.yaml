@@ -1,0 +1,31 @@
+appId: app.crewmap
+name: F1e — stats page with trend + per-crew visibility control
+---
+- launchApp
+- tapOn:
+    id: open-stats
+- assertVisible:
+    id: stat-driven
+- tapOn:
+    id: seg-month
+- takeScreenshot: F1e-stats
+- back
+# Stats visibility is per crew (D52): crew screen → What this crew sees.
+- tapOn:
+    id: open-crew
+- scrollUntilVisible:
+    element:
+      id: crew-sees
+    timeout: 30000
+- tapOn:
+    id: crew-sees
+- scrollUntilVisible:
+    element:
+      id: vis-score
+    timeout: 60000
+- tapOn:
+    id: vis-score
+- takeScreenshot: F1e-visibility-off
+# Restore the owner's real setting: toggle back.
+- tapOn:
+    id: vis-score

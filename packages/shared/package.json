@@ -1,0 +1,41 @@
+{
+  "name": "@crewmap/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./geo": "./src/geo.ts",
+    "./links": "./src/links.ts",
+    "./driving": "./src/driving/index.ts",
+    "./navigation": "./src/navigation/index.ts",
+    "./navigation/externalNav": "./src/navigation/externalNav.ts",
+    "./navigation/externalNavParse": "./src/navigation/externalNavParse.ts",
+    "./navigation/advisory": "./src/navigation/advisory.ts",
+    "./stats": "./src/stats/index.ts",
+    "./i18n": "./src/i18n/index.ts",
+    "./places": "./src/places/index.ts",
+    "./emotes": "./src/emotes.ts",
+    "./emoteCombo": "./src/emoteCombo.ts",
+    "./emoteBurst": "./src/emoteBurst.ts",
+    "./rideMutes": "./src/rideMutes.ts",
+    "./friend": "./src/friend.ts",
+    "./etaRefresh": "./src/etaRefresh.ts",
+    "./companions": "./src/companions/index.ts",
+    "./sun": "./src/sun.ts",
+    "./units": "./src/units.ts",
+    "./avatar": "./src/avatar.ts",
+    "./messaging": "./src/messaging.ts",
+    "./motion": "./src/motion.ts",
+    "./shell": "./src/shell/index.ts"
+  }
+}

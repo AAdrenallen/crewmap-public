@@ -1,0 +1,23 @@
+appId: app.crewmap
+name: F1d — trip detail with coloured route, events and score (replay hard brake)
+---
+- openLink: crewmap://dev/replay?name=hardBrake&speedup=60
+- waitForAnimationToEnd:
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible:
+      id: speed-badge
+    timeout: 120000
+# Deep link rather than the side button: OEM edge overlays (e.g. OnePlus Quick Ball) can sit over that corner.
+- openLink: crewmap://trips
+- tapOn:
+    id: trip-row-0
+- assertVisible:
+    id: trip-map
+- assertVisible:
+    id: score-value
+- scrollUntilVisible:
+    element:
+      id: "trip-event-.*hardBrake.*"
+    timeout: 20000
+- takeScreenshot: F1d-trip-detail

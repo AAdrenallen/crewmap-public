@@ -1,0 +1,23 @@
+# Optional central-PC fallback. One command:  docker compose -f relay/docker-compose.yml up -d
+# Blind store-and-forward only: no circle keys, ciphertext only. Expose via Tailscale Funnel or Cloudflare Tunnel
+# (see relay/README.md); never open router ports.
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    ports: ["127.0.0.1:7447:7447"]
+    volumes: [relay-data:/data]
+  ntfy:
+    image: binwiederhier/ntfy:v2.14.0
+    command: serve
+    restart: unless-stopped
+    environment:
+      NTFY_BASE_URL: http://localhost:7448
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_ENABLE_LOGIN: "false"
+      NTFY_VISITOR_SUBSCRIBER_RATE_LIMITING: "true"
+    ports: ["127.0.0.1:7448:80"]
+    volumes: [ntfy-cache:/var/cache/ntfy]
+volumes:
+  relay-data:
+  ntfy-cache:

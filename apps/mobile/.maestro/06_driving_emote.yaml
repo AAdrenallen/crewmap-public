@@ -1,0 +1,16 @@
+appId: app.crewmap
+name: F3c — driving recipient — popup in a safe spot, no tap, auto-dismiss (replay)
+---
+- runFlow: subflows/close_sheets.yaml
+- openLink: crewmap://dev/replay?name=drivingEmote&speedup=4
+- extendedWaitUntil:
+    visible:
+      id: emote-popup
+    timeout: 180000
+- assertVisible:
+    id: nav-main-banner
+- takeScreenshot: F3c-driving-emote
+- extendedWaitUntil:
+    notVisible:
+      id: emote-popup
+    timeout: 180000

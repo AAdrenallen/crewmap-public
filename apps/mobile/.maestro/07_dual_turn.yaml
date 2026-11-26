@@ -1,0 +1,12 @@
+appId: app.crewmap
+name: F11 — next turn + following-turn tab, emphasised for turns 150 m apart (replay)
+---
+- openLink: crewmap://dev/replay?name=twoTurns&speedup=4
+- extendedWaitUntil:
+    visible:
+      id: nav-following-tab
+    timeout: 30000
+- assertVisible:
+    id: nav-main-banner
+- assertVisible: Then
+- takeScreenshot: F11-dual-turn

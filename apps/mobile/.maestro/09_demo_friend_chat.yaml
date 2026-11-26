@@ -1,0 +1,50 @@
+appId: app.crewmap
+name: Demo friend — chat, emotes both ways, shared stats (dev build only)
+tags:
+  - demo
+---
+- openLink: crewmap://dev/demo?action=start
+# Crew creation + invite + join go over public relays: allow time.
+- extendedWaitUntil:
+    visible:
+      id: "friend-card-Demo Alex"
+    timeout: 90000
+- tapOn:
+    id: "friend-card-Demo Alex"
+- scrollUntilVisible:
+    element:
+      id: friend-stats
+    timeout: 30000
+- takeScreenshot: demo-friend-sheet
+- scrollUntilVisible:
+    element:
+      id: open-chat
+    direction: UP
+    timeout: 15000
+- tapOn:
+    id: open-chat
+- tapOn:
+    id: chat-input
+- inputText: "Hi Alex"
+- tapOn:
+    id: chat-send
+- extendedWaitUntil:
+    visible:
+      id: chat-msg-0
+    timeout: 20000
+- takeScreenshot: demo-chat-sent
+- extendedWaitUntil:
+    visible:
+      id: chat-msg-1
+    timeout: 30000
+- takeScreenshot: demo-chat-reply
+- tapOn:
+    id: chat-quick-getMeFood
+- back
+- runFlow: subflows/close_sheets.yaml
+- openLink: crewmap://dev/demo?action=emote
+- extendedWaitUntil:
+    visible:
+      id: emote-popup
+    timeout: 30000
+- takeScreenshot: demo-emote-received

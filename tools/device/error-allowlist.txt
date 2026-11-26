@@ -1,0 +1,33 @@
+# Known benign logcat noise for tools/device/collect-errors.sh.
+# One extended regex per line (grep -E), matched against the whole logcat line. Keep it short and explain each entry.
+
+# Google Play services probing for a service the app does not use.
+GoogleApiManager|Unable to start service Intent.*com\.google\.android\.gms
+# Mapbox telemetry/events are disabled; its HTTP client logs a warning on a closed connection.
+MapboxTelemetry
+# Maestro's own instrumentation driver.
+dev\.mobile\.maestro
+# Mapbox telemetry is deliberately disabled (privacy); its flush attempts log "events dispatch disabled" warnings.
+events dispatch disabled
+# three.js (avatar renderer) deprecation notice from the library itself; no action available.
+THREE\.Clock: This module has been deprecated
+# The GL context lacks an optional extension on this GPU driver; harmless.
+WEBGL_lose_context extension not supported
+# Mapbox SDK housekeeping warnings (OEM performance-hint API missing, location-provider state race, memory trim callbacks).
+Failed to create performance hint session
+GoogleDeviceLocationProvider\]: Skipped start state change
+MapboxLifecyclePlugin\]: onTrimMemory
+# Mapbox logs this when the style is updated while a previous runtime change is pending (map-follow churn during replays); no effect.
+Updated style is ignored due to runtime changes
+# expo-task-manager logs this when a background location task fires while the app process was just (re)started by the dev client; no action.
+No task registered for key expo-task-manager
+# Mapbox GL surface/lifecycle chatter when a MapView is unmounted or the activity pauses (screen change, replay end); the SDK recovers on its own.
+EGL surface was already destroyed before
+eglSwapBuffer error: 12301\. Waiting for new surface
+should not be stored and used after MapView is destroyed
+# Mapbox's own location provider ignores a duplicate start while already starting/started (we restart tracking on profile changes).
+DeviceLocationProvider\]: Skipping request to start
+# Logged when follow-puck viewport runs while our CustomLocationProvider puck is momentarily off (preview/overview); follow resumes when the puck returns.
+FollowPuckViewportStateImpl\]: Location component is required
+# @rnmapbox MarkerView logs this when a marker is unmounted after its map view already detached it (friend/companion markers leaving the viewport, screen changes); nothing leaks.
+RNMBXMarkerView.*Unable to remove view

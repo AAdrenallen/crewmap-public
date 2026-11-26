@@ -1,0 +1,29 @@
+{
+  "name": "@crewmap/replay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "sim": "tsx src/cli/sim.ts"
+  },
+  "dependencies": {
+    "@crewmap/shared": "workspace:*",
+    "@crewmap/p2p": "workspace:*",
+    "@crewmap/hazards": "workspace:*",
+    "@crewmap/relay": "workspace:*"
+  },
+  "devDependencies": {
+    "libsodium-wrappers-sumo": "^0.8.4",
+    "tsx": "^4.20.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts",
+    "./synth": "./src/synth.ts",
+    "./mapbox": "./src/mapboxFixture.ts"
+  }
+}

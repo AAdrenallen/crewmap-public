@@ -1,0 +1,33 @@
+{
+  "_persona": "Original 'Crew Radio' announcer: gruff, over-the-top biker-radio hype man. Original lines only; PG-13, friendly cheeky. Each line <= 2 s.",
+  "en": {
+    "getMeFood": ["Feed the beast!", "Chow time, road dog!"],
+    "areWeThereYet": ["Are we there yet?!", "Still rolling, champ!"],
+    "whereAreYou": ["Where ya at, rider?", "Sound off, legend!"],
+    "hurryUp": ["Floor it!", "Pedal down, champ!"],
+    "callMe": ["Pick up the phone!", "Ring ring, legend!"],
+    "honkHonk": ["Honk honk, baby!", "Lay on that horn!"],
+    "onMyWay": ["Rolling in hot!", "Incoming, crew!"],
+    "missYou": ["Miss ya, menace!", "The road's lonely, pal!"]
+  },
+  "fr": {
+    "getMeFood": ["Nourris la bête !", "À la soupe, motard !"],
+    "areWeThereYet": ["On arrive quand ?!", "Ça roule, champion !"],
+    "whereAreYou": ["T'es où, l'ami ?", "Donne signe de vie !"],
+    "hurryUp": ["Plein gaz !", "Mets la gomme !"],
+    "callMe": ["Décroche, légende !", "Appelle-moi !"],
+    "honkHonk": ["Pouet pouet, bébé !", "Klaxonne-moi ça !"],
+    "onMyWay": ["J'arrive à fond !", "Ça débarque !"],
+    "missYou": ["Tu me manques, canaille !", "La route est triste !"]
+  },
+  "ru": {
+    "getMeFood": ["Накорми зверя!", "Жрать пора, бродяга!"],
+    "areWeThereYet": ["Мы уже приехали?!", "Катим дальше, чемпион!"],
+    "whereAreYou": ["Ты где, гонщик?", "Отзовись, легенда!"],
+    "hurryUp": ["Газу!", "Жми на газ!"],
+    "callMe": ["Возьми трубку!", "Позвони, легенда!"],
+    "honkHonk": ["Би-бип, детка!", "Дави на гудок!"],
+    "onMyWay": ["Лечу на всех парах!", "Банда на подходе!"],
+    "missYou": ["Скучаю, хулиган!", "Без тебя тоскливо!"]
+  }
+}

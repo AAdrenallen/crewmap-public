@@ -1,0 +1,16 @@
+# Maestro flows for CrewMap acceptance rows. Run: maestro test --exclude-tags destructive apps/mobile/.maestro
+# 01_onboarding clears app data (identity, crew, history): run it only on an emulator or a throwaway install.
+# Needs a dev build (replay deep links are dev-only) on an emulator or the test phone.
+flows:
+  - "*.yaml"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - 02_speed_limit
+    - 03_trip_detail
+    - 04_stats_visibility
+    - 05_emote_presets
+    - 06_driving_emote
+    - 07_dual_turn
+    - 08_avatar_editor
+    - 09_demo_friend_chat

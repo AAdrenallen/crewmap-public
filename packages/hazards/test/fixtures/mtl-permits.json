@@ -1,0 +1,432 @@
+{
+ "help": "",
+ "success": true,
+ "result": {
+  "fields": [
+   {
+    "id": "id",
+    "type": "text"
+   },
+   {
+    "id": "currentstatus",
+    "type": "text"
+   },
+   {
+    "id": "duration_start_date",
+    "type": "text"
+   },
+   {
+    "id": "duration_end_date",
+    "type": "text"
+   },
+   {
+    "id": "reason_category",
+    "type": "text"
+   },
+   {
+    "id": "occupancy_name",
+    "type": "text"
+   },
+   {
+    "id": "load_date",
+    "type": "text"
+   },
+   {
+    "id": "longitude",
+    "type": "text"
+   },
+   {
+    "id": "latitude",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sun_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sun_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sun_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sun_end_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_mon_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_mon_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_mon_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_mon_end_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_tue_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_tue_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_tue_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_tue_end_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_wed_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_wed_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_wed_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_wed_end_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_thu_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_thu_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_thu_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_thu_end_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_fri_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_fri_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_fri_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_fri_end_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sat_active",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sat_all_day_round",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sat_start_time",
+    "type": "text"
+   },
+   {
+    "id": "duration_days_sat_end_time",
+    "type": "text"
+   }
+  ],
+  "records": [
+   {
+    "id": "65df55d2d366dc0019e6085c",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2024-03-03T19:00:00Z",
+    "duration_end_date": "2026-12-23T18:59:59Z",
+    "reason_category": "Autre",
+    "occupancy_name": "De Richelieu entre Couvent et Saint-Ferdinand",
+    "load_date": "2024-10-29T19:06:02Z",
+    "longitude": "-73.59031214482674",
+    "latitude": "45.47939500372976",
+    "duration_days_sun_active": "t",
+    "duration_days_sun_all_day_round": "t",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "t",
+    "duration_days_mon_start_time": null,
+    "duration_days_mon_end_time": null,
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "t",
+    "duration_days_tue_start_time": null,
+    "duration_days_tue_end_time": null,
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "t",
+    "duration_days_wed_start_time": null,
+    "duration_days_wed_end_time": null,
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "t",
+    "duration_days_thu_start_time": null,
+    "duration_days_thu_end_time": null,
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "t",
+    "duration_days_fri_start_time": null,
+    "duration_days_fri_end_time": null,
+    "duration_days_sat_active": "t",
+    "duration_days_sat_all_day_round": "t",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   },
+   {
+    "id": "6af4e1802889b2709f680cc6",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2026-11-16T19:00:00Z",
+    "duration_end_date": "2026-11-24T18:59:59Z",
+    "reason_category": "Feux de signalisation - Ajout/réparation",
+    "occupancy_name": "Hôtel-de-Ville entre Rachel et Lionais",
+    "load_date": "2026-11-15T00:02:50Z",
+    "longitude": "-73.58018923409212",
+    "latitude": "45.5198656334665",
+    "duration_days_sun_active": "f",
+    "duration_days_sun_all_day_round": "f",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "f",
+    "duration_days_mon_start_time": "07:00",
+    "duration_days_mon_end_time": "16:00",
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "f",
+    "duration_days_tue_start_time": "07:00",
+    "duration_days_tue_end_time": "16:00",
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "f",
+    "duration_days_wed_start_time": "07:00",
+    "duration_days_wed_end_time": "16:00",
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "f",
+    "duration_days_thu_start_time": "07:00",
+    "duration_days_thu_end_time": "16:00",
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "f",
+    "duration_days_fri_start_time": "07:00",
+    "duration_days_fri_end_time": "16:00",
+    "duration_days_sat_active": "f",
+    "duration_days_sat_all_day_round": "f",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   },
+   {
+    "id": "6ad611f4d4f58c1f3662f079",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2026-10-21T20:00:00Z",
+    "duration_end_date": "2026-11-27T18:59:59Z",
+    "reason_category": "S-3 Infrastructure souterraine majeure - Massifs et conduits",
+    "occupancy_name": "Côte-de-Liesse entre Liesse et Station",
+    "load_date": "2026-10-21T00:01:58Z",
+    "longitude": "-73.70575708171138",
+    "latitude": "45.4754188236877",
+    "duration_days_sun_active": "t",
+    "duration_days_sun_all_day_round": "t",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "t",
+    "duration_days_mon_start_time": null,
+    "duration_days_mon_end_time": null,
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "t",
+    "duration_days_tue_start_time": null,
+    "duration_days_tue_end_time": null,
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "t",
+    "duration_days_wed_start_time": null,
+    "duration_days_wed_end_time": null,
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "t",
+    "duration_days_thu_start_time": null,
+    "duration_days_thu_end_time": null,
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "t",
+    "duration_days_fri_start_time": null,
+    "duration_days_fri_end_time": null,
+    "duration_days_sat_active": "t",
+    "duration_days_sat_all_day_round": "t",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   },
+   {
+    "id": "67aa3ef05408a50019f0945a",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2025-02-14T19:00:00Z",
+    "duration_end_date": "2028-01-01T18:59:59Z",
+    "reason_category": "Autre",
+    "occupancy_name": "Cannes entre Baunard et Jean-Talon",
+    "load_date": "2025-02-13T00:01:14Z",
+    "longitude": "-73.58464325374113",
+    "latitude": "45.57393342456388",
+    "duration_days_sun_active": "t",
+    "duration_days_sun_all_day_round": "t",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "t",
+    "duration_days_mon_start_time": null,
+    "duration_days_mon_end_time": null,
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "t",
+    "duration_days_tue_start_time": null,
+    "duration_days_tue_end_time": null,
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "t",
+    "duration_days_wed_start_time": null,
+    "duration_days_wed_end_time": null,
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "t",
+    "duration_days_thu_start_time": null,
+    "duration_days_thu_end_time": null,
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "t",
+    "duration_days_fri_start_time": null,
+    "duration_days_fri_end_time": null,
+    "duration_days_sat_active": "t",
+    "duration_days_sat_all_day_round": "t",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   },
+   {
+    "id": "67aa441d5408a50019f0954e",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2025-02-14T19:00:00Z",
+    "duration_end_date": "2028-01-01T18:59:59Z",
+    "reason_category": "Autre",
+    "occupancy_name": "Viau entre Paisley et Jean-Talon",
+    "load_date": "2025-02-13T00:01:14Z",
+    "longitude": "-73.58421860141873",
+    "latitude": "45.574749745249584",
+    "duration_days_sun_active": "t",
+    "duration_days_sun_all_day_round": "t",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "t",
+    "duration_days_mon_start_time": null,
+    "duration_days_mon_end_time": null,
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "t",
+    "duration_days_tue_start_time": null,
+    "duration_days_tue_end_time": null,
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "t",
+    "duration_days_wed_start_time": null,
+    "duration_days_wed_end_time": null,
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "t",
+    "duration_days_thu_start_time": null,
+    "duration_days_thu_end_time": null,
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "t",
+    "duration_days_fri_start_time": null,
+    "duration_days_fri_end_time": null,
+    "duration_days_sat_active": "t",
+    "duration_days_sat_all_day_round": "t",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   },
+   {
+    "id": "6ad670832889b2709fbdf259",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2026-10-25T20:00:00Z",
+    "duration_end_date": "2027-05-06T19:59:59Z",
+    "reason_category": "Construction/rénovation avec excavation",
+    "occupancy_name": "Seigneurs entre Saint-Patrick et Bassins",
+    "load_date": "2026-10-22T00:02:19Z",
+    "longitude": "-73.5662295288499",
+    "latitude": "45.48570755632233",
+    "duration_days_sun_active": "t",
+    "duration_days_sun_all_day_round": "t",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "t",
+    "duration_days_mon_start_time": null,
+    "duration_days_mon_end_time": null,
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "t",
+    "duration_days_tue_start_time": null,
+    "duration_days_tue_end_time": null,
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "t",
+    "duration_days_wed_start_time": null,
+    "duration_days_wed_end_time": null,
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "t",
+    "duration_days_thu_start_time": null,
+    "duration_days_thu_end_time": null,
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "t",
+    "duration_days_fri_start_time": null,
+    "duration_days_fri_end_time": null,
+    "duration_days_sat_active": "t",
+    "duration_days_sat_all_day_round": "t",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   },
+   {
+    "id": "6ad758ac2889b2709fc2e557",
+    "currentstatus": "Permis émis",
+    "duration_start_date": "2026-11-23T19:00:00Z",
+    "duration_end_date": "2026-11-24T18:59:59Z",
+    "reason_category": "Entretien",
+    "occupancy_name": "Rita-Levi-Montalcini entre Rosario-Bayeur et Samuel-Morse",
+    "load_date": "2026-10-22T00:02:19Z",
+    "longitude": "-73.58287474479567",
+    "latitude": "45.6411226584253",
+    "duration_days_sun_active": "f",
+    "duration_days_sun_all_day_round": "f",
+    "duration_days_sun_start_time": null,
+    "duration_days_sun_end_time": null,
+    "duration_days_mon_active": "t",
+    "duration_days_mon_all_day_round": "f",
+    "duration_days_mon_start_time": "07:00",
+    "duration_days_mon_end_time": "16:00",
+    "duration_days_tue_active": "t",
+    "duration_days_tue_all_day_round": "f",
+    "duration_days_tue_start_time": "07:00",
+    "duration_days_tue_end_time": "16:00",
+    "duration_days_wed_active": "t",
+    "duration_days_wed_all_day_round": "f",
+    "duration_days_wed_start_time": "07:00",
+    "duration_days_wed_end_time": "16:00",
+    "duration_days_thu_active": "t",
+    "duration_days_thu_all_day_round": "f",
+    "duration_days_thu_start_time": "07:00",
+    "duration_days_thu_end_time": "16:00",
+    "duration_days_fri_active": "t",
+    "duration_days_fri_all_day_round": "f",
+    "duration_days_fri_start_time": "07:00",
+    "duration_days_fri_end_time": "16:00",
+    "duration_days_sat_active": "f",
+    "duration_days_sat_all_day_round": "f",
+    "duration_days_sat_start_time": null,
+    "duration_days_sat_end_time": null
+   }
+  ],
+  "total": 7
+ }
+}

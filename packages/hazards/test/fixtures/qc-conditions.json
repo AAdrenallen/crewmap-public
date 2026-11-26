@@ -1,0 +1,112 @@
+{
+ "type": "FeatureCollection",
+ "name": "conditions_routieres",
+ "bbox": [
+  -73.995946,
+  45.4013,
+  -61.554361,
+  49.165076
+ ],
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "NumeroSegment": 1881,
+    "NumeroRoute": 199,
+    "NomRoute": "route 199",
+    "NomRegion": "Bas-Saint-Laurent—Gaspésie—Îles-de-la-Madeleine",
+    "LocalisationDebutFR": "Cap Gridley",
+    "LocalisationFinFR": "Chemin de l'Étang-du-Nord",
+    "LocalisationDebutEN": "Cap Gridley",
+    "LocalisationFinEN": "Chemin de l'Étang-du-Nord",
+    "CodeEtatChaussee": "Ds",
+    "DescriptionEtatChausseeFR": "Dégagée et sèche",
+    "DescriptionEtatChausseeEN": "Bare and Dry",
+    "CodeCouleurEtatChaussee": "0D0D0D",
+    "CodeVisibilite": "B",
+    "DescriptionVisibiliteFR": "Bonne",
+    "DescriptionVisibiliteEN": "Good",
+    "CodeCouleurVisibilite": "0D0D0D",
+    "IndicateurPresenceLamesNeige": "N",
+    "EnVigueurDepuis": "2026-11-24T16:18:59"
+   },
+   "bbox": [
+    -61.937675,
+    47.233914,
+    -61.827885,
+    47.37244
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -61.827885,
+      47.236963
+     ],
+     [
+      -61.828438,
+      47.237248
+     ],
+     [
+      -61.829634,
+      47.237692
+     ],
+     [
+      -61.831341,
+      47.237948
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "NumeroSegment": 1891,
+    "NumeroRoute": 199,
+    "NomRoute": "route 199",
+    "NomRegion": "Bas-Saint-Laurent—Gaspésie—Îles-de-la-Madeleine",
+    "LocalisationDebutFR": "Chemin de l'Étang-du-Nord",
+    "LocalisationFinFR": "Pont du Détroit",
+    "LocalisationDebutEN": "Chemin de l'Étang-du-Nord",
+    "LocalisationFinEN": "Détroit Bridge",
+    "CodeEtatChaussee": "Ds",
+    "DescriptionEtatChausseeFR": "Dégagée et sèche",
+    "DescriptionEtatChausseeEN": "Bare and Dry",
+    "CodeCouleurEtatChaussee": "0D0D0D",
+    "CodeVisibilite": "B",
+    "DescriptionVisibiliteFR": "Bonne",
+    "DescriptionVisibiliteEN": "Good",
+    "CodeCouleurVisibilite": "0D0D0D",
+    "IndicateurPresenceLamesNeige": "N",
+    "EnVigueurDepuis": "2026-11-24T16:18:59"
+   },
+   "bbox": [
+    -61.913173,
+    47.370496,
+    -61.739484,
+    47.478655
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -61.913173,
+      47.37244
+     ],
+     [
+      -61.908788,
+      47.371631
+     ],
+     [
+      -61.905589,
+      47.370653
+     ],
+     [
+      -61.904701,
+      47.370527
+     ]
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,127 @@
+{
+ "type": "FeatureCollection",
+ "numberMatched": 14,
+ "name": "evenements",
+ "bbox": [
+  -77.367377,
+  45.57752,
+  -68.469411,
+  52.686908
+ ],
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "identifiant": 81387,
+    "entrave": "Circulation en alternance",
+    "numeroRoute": "",
+    "localisation": "chemin du Barrage sur le pont au-dessus de la rivière Blanche. Largeur de la voie réduite à 4,6 mètres.",
+    "direction": "OUEST et EST",
+    "municipalite": "Val-des-Monts",
+    "duree": "Indéterminée",
+    "cause": "Mesures préventives",
+    "consequence": "",
+    "detour": "",
+    "regions": "(1:Outaouais)",
+    "regionsDiffusion": "(1:Outaouais)",
+    "enVigueurDepuis": "2025-07-30T11:17:00",
+    "couleurLigne": "#FF6A33"
+   },
+   "bbox": [
+    -75.644408,
+    45.673633,
+    -75.643941,
+    45.673896
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -75.644408,
+      45.673633
+     ],
+     [
+      -75.643941,
+      45.673896
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "identifiant": 126657,
+    "entrave": "Fermeture de 1 voie sur 2",
+    "numeroRoute": "73",
+    "localisation": "A-73 à la hauteur route du Golf",
+    "direction": "SUD",
+    "municipalite": "Beauceville",
+    "duree": "Indéterminée",
+    "cause": "Mesures préventives",
+    "consequence": "",
+    "detour": "",
+    "regions": "(1:Chaudière-Appalaches)",
+    "regionsDiffusion": "(1:Chaudière-Appalaches)",
+    "enVigueurDepuis": "2026-09-02T10:02:00",
+    "couleurLigne": "#FF6A33"
+   },
+   "bbox": [
+    -70.78481,
+    46.250157,
+    -70.781693,
+    46.251958
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -70.78481,
+      46.251958
+     ],
+     [
+      -70.781693,
+      46.250157
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "identifiant": 125479,
+    "entrave": "Fermeture",
+    "numeroRoute": "397",
+    "localisation": "R-397 à la hauteur rivière Laflamme",
+    "direction": "SUD et NORD",
+    "municipalite": "Secteur Lac-Despinassy",
+    "duree": "Indéterminée",
+    "cause": "Bris de la structure",
+    "consequence": "",
+    "detour": "R-113, R-386",
+    "regions": "(1:Abitibi-Témiscamingue)",
+    "regionsDiffusion": "(1:Abitibi-Témiscamingue)",
+    "enVigueurDepuis": "2026-07-24T13:49:00",
+    "couleurLigne": "#FF0000"
+   },
+   "bbox": [
+    -77.305276,
+    48.936508,
+    -77.30374,
+    48.936508
+   ],
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -77.305276,
+      48.936508
+     ],
+     [
+      -77.30374,
+      48.936508
+     ]
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,6 @@
+# iOS: LocationService
+- **Interface:** `LocationService` in `../../contracts.ts`.
+- **Native API:** CoreLocation `CLLocationManager` (via `expo-location`, which already supports iOS): `allowsBackgroundLocationUpdates = true`, `showsBackgroundLocationIndicator`, `activityType = .automotiveNavigation` while driving, `.fitness` walking, `pausesLocationUpdatesAutomatically = false` while sharing. Significant-change monitoring when still (wakes a terminated app).
+- **Implementation:** `location/ios.ts` reuses `android.ts` almost verbatim (same expo-location task). Differences: no foreground-service notification; must request When-In-Use first, then Always (two-step).
+- **Limits:** iOS may suspend after ~10 min of no movement unless updates continue; "Always" can be downgraded by the user; the app is relaunched for significant-change/region events only. Info.plist strings and `UIBackgroundModes: location` already set in `app.config.ts`.
+- **Heading (`watchHeading`):** `CLLocationManager.startUpdatingHeading` via `expo-location` `watchHeadingAsync`; `trueHeading` when ≥ 0 (needs a location fix), else `magneticHeading`. `headingAccuracy` is degrees of error: drop < 0 or > 30. Subscribe only while the map is visible and heading-up; `remove()` stops the magnetometer. `headingOrientation` follows the interface orientation (portrait-only app: default).

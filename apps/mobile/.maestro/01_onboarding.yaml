@@ -1,0 +1,42 @@
+appId: app.crewmap
+name: Onboarding — name, permissions in-flow, avatar, create crew
+tags:
+  - destructive
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: onb-name
+- inputText: Maestro
+- tapOn:
+    id: onb-next
+- tapOn:
+    id: perm-fg
+- runFlow:
+    when:
+      visible: While using the app
+    commands:
+      - tapOn: While using the app
+- tapOn:
+    id: perm-motion
+- runFlow:
+    when:
+      visible: Allow
+    commands:
+      - tapOn: Allow
+- tapOn:
+    id: onb-next
+- tapOn:
+    id: onb-shuffle
+- tapOn:
+    id: onb-next
+- tapOn:
+    id: onb-next
+- tapOn:
+    id: onb-crew-name
+- inputText: Test Crew
+- tapOn:
+    id: onb-create
+- assertVisible:
+    id: open-search
+- takeScreenshot: onboarding-done

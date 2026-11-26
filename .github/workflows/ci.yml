@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'tools/blender/**', 'apps/mobile/.maestro/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, tests (incl. P2P protocol + encryption)
+    # Private repo: the owner's self-hosted runner (label crewmap-local, Windows) — no Actions minutes used.
+    # Public snapshot repo: GitHub-hosted runners (free for public repos). Never self-hosted for public (fork PRs).
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted","crewmap-local"]') || 'ubuntu-latest' }}
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@12.23.0 --activate
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint (incl. platform-import boundary rule, X8)
+        run: pnpm lint
+      - name: Typecheck all packages
+        run: pnpm typecheck
+      - name: Typecheck app
+        run: pnpm --filter mobile typecheck
+      - name: No stubs / TODOs in shipped code (X4)
+        run: pnpm check:stubs
+      - name: Tests (driving replay, navigation, crypto, P2P, hazards, relay, simulator)
+        run: pnpm test
+      - name: Multi-peer simulator benchmark (X5/X6)
+        run: mkdir -p benchmark-reports && pnpm --filter @crewmap/replay sim ../../benchmark-reports/P2P-BENCHMARK.sim.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2p-benchmark
+          path: benchmark-reports/
+
+  relay-docker:
+    name: Relay starts with one command (X7)
+    # Only when the relay changes (saves minutes); always on manual runs.
+    if: ${{ !github.event.repository.private && (github.event_name == 'workflow_dispatch' || contains(join(github.event.commits.*.modified, ' '), 'relay/') || contains(join(github.event.commits.*.added, ' '), 'relay/')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f relay/docker-compose.yml up -d --build
+      - name: Health
+        run: |
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:7447/health && exit 0; sleep 2; done
+          docker compose -f relay/docker-compose.yml logs; exit 1
+      - name: NIP-11
+        run: |
+          curl -sf -H 'Accept: application/nostr+json' http://127.0.0.1:7447 | grep -q supported_nips
+      - run: docker compose -f relay/docker-compose.yml down

@@ -1,0 +1,30 @@
+appId: app.crewmap
+name: F3b — all named emote presets + custom audio record button
+---
+- openLink: crewmap://dev/demo?action=start
+- extendedWaitUntil:
+    visible:
+      id: "friend-card-Demo Alex"
+    timeout: 90000
+- tapOn:
+    id: "friend-card-Demo Alex"
+- extendedWaitUntil:
+    visible:
+      id: friend-emote
+    timeout: 30000
+- tapOn:
+    id: friend-emote
+- extendedWaitUntil:
+    visible:
+      id: emote-getMeFood
+    timeout: 30000
+- assertVisible: { id: emote-getMeFood }
+- assertVisible: { id: emote-areWeThereYet }
+- assertVisible: { id: emote-whereAreYou }
+- assertVisible: { id: emote-hurryUp }
+- assertVisible: { id: emote-callMe }
+- assertVisible: { id: emote-honkHonk }
+- assertVisible: { id: emote-onMyWay }
+- assertVisible: { id: emote-missYou }
+- assertVisible: { id: emote-record }
+- takeScreenshot: F3b-emote-presets

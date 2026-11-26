@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Last line of defence before anything reaches GitHub: scan every tracked file.
+ROOT="$(git rev-parse --show-toplevel)"
+source "$ROOT/tools/env.sh" >/dev/null 2>&1
+node "$ROOT/tools/privacy/check.mjs" || { echo "Push blocked by the privacy check (see above)."; exit 1; }

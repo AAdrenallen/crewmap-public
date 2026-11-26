@@ -1,0 +1,13 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 49282df744daa7ba04f3ae97d14731818a47e772..2d0b1ffa8d0c55552fb7c88e25c2c3c3874ac6cb 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -66,7 +66,7 @@ android {
+         // correctly.
+         // see https://developer.android.com/ndk/guides/cpp-support#selecting_a_c_runtime
+         arguments "-DANDROID_STL=c++_shared",
+-                  "-DNODE_MODULES_DIR=${nodeModules}"
++                  "-DNODE_MODULES_DIR=${nodeModules.toString().replace(File.separator, "/")}"
+       }
+     }
+   }

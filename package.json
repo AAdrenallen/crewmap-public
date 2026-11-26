@@ -1,0 +1,30 @@
+{
+  "name": "crewmap",
+  "private": true,
+  "packageManager": "pnpm@12.23.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run",
+    "check:stubs": "node tools/check-stubs.mjs",
+    "android": "pnpm --filter mobile android",
+    "sim": "pnpm --filter @crewmap/replay sim",
+    "relay": "pnpm --filter @crewmap/relay start"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.74.0",
+    "vitest": "^5.1.1"
+  },
+  "type": "module"
+}

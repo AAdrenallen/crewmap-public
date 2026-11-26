@@ -1,0 +1,15 @@
+appId: app.crewmap
+---
+# Previous flows can end inside the emote sheet over the friend sheet; the home overlays are hidden behind them.
+- runFlow:
+    when:
+      visible:
+        id: emote-record
+    commands:
+      - back
+- runFlow:
+    when:
+      visible:
+        id: friend-emote
+    commands:
+      - back

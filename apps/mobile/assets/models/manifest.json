@@ -1,0 +1,604 @@
+{
+  "avatar": {
+    "body": [
+      "slim",
+      "regular",
+      "broad",
+      "curvy"
+    ],
+    "hair": [
+      "none",
+      "buzz",
+      "short",
+      "curly",
+      "bob",
+      "long",
+      "bun",
+      "mohawk",
+      "afro",
+      "ponytail",
+      "fade",
+      "wavy",
+      "pigtails",
+      "braids",
+      "slicked",
+      "quiff",
+      "mullet",
+      "spiky",
+      "sidePart",
+      "pixie",
+      "dreads",
+      "bowl",
+      "spaceBuns",
+      "undercut",
+      "topKnot",
+      "cornrows"
+    ],
+    "face": [
+      "smile",
+      "grin",
+      "cool",
+      "wink",
+      "calm",
+      "surprised"
+    ],
+    "top": [
+      "tee",
+      "hoodie",
+      "jacket",
+      "tank",
+      "sweater",
+      "jersey"
+    ],
+    "bottom": [
+      "jeans",
+      "shorts",
+      "skirt",
+      "joggers",
+      "cargo",
+      "bootcut",
+      "skinny",
+      "baggy",
+      "leggings",
+      "overalls",
+      "pleated"
+    ],
+    "shoes": [
+      "sneakers",
+      "boots",
+      "sandals",
+      "hightops",
+      "loafers",
+      "clogs",
+      "slippers"
+    ],
+    "hat": [
+      "none",
+      "cap",
+      "beanie",
+      "bucket",
+      "tuque",
+      "crown",
+      "backCap",
+      "cowboy",
+      "topHat",
+      "party",
+      "chef",
+      "viking",
+      "pirate",
+      "hardHat",
+      "propeller",
+      "catEars",
+      "sombrero",
+      "wizard",
+      "beret",
+      "headband"
+    ],
+    "glasses": [
+      "none",
+      "round",
+      "square",
+      "shades",
+      "visor",
+      "boxed",
+      "wire",
+      "aviator",
+      "slim",
+      "cyber",
+      "heart",
+      "star",
+      "paper3d",
+      "monocle",
+      "nerd",
+      "goggles",
+      "pixel",
+      "steampunk",
+      "catEye"
+    ],
+    "accessory": [
+      "none",
+      "backpack",
+      "scarf",
+      "headphones",
+      "chain",
+      "cape",
+      "earrings",
+      "bandana",
+      "mask",
+      "facePaint",
+      "freckles",
+      "beard",
+      "goatee",
+      "moustache",
+      "handlebar",
+      "scar",
+      "bowTie",
+      "tie",
+      "pearls",
+      "wings",
+      "halo",
+      "antennae",
+      "tail",
+      "eyePatch",
+      "blush",
+      "horns"
+    ]
+  },
+  "avatarTris": {
+    "worstCaseTris": 13408
+  },
+  "cars": {
+    "bathtub": 2144,
+    "carpet": 2192,
+    "cart": 2876,
+    "compact": 3654,
+    "convertible": 3532,
+    "hatchback": 3838,
+    "hotdog": 3296,
+    "motorcycle": 2376,
+    "pickup": 3816,
+    "rocket": 1536,
+    "scooter": 936,
+    "skateboard": 1348,
+    "sports": 3658,
+    "suv": 3978,
+    "van": 3912
+  },
+  "rides": {
+    "compact": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        0.15,
+        1.0083
+      ],
+      "rider": 0.65,
+      "pose": {
+        "legL": [
+          -0.5,
+          -0.06
+        ],
+        "legR": [
+          -0.5,
+          0.06
+        ],
+        "armL": [
+          -0.2,
+          -1.3
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "hatchback": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        0.3,
+        1.0683
+      ],
+      "rider": 0.65,
+      "pose": {
+        "legL": [
+          -0.5,
+          -0.06
+        ],
+        "legR": [
+          -0.5,
+          0.06
+        ],
+        "armL": [
+          -0.2,
+          -1.3
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "suv": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        0.1,
+        1.4883
+      ],
+      "rider": 0.65,
+      "pose": {
+        "legL": [
+          -0.5,
+          -0.06
+        ],
+        "legR": [
+          -0.5,
+          0.06
+        ],
+        "armL": [
+          -0.2,
+          -1.3
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "sports": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        0.28,
+        0.7683
+      ],
+      "rider": 0.65,
+      "pose": {
+        "legL": [
+          -0.5,
+          -0.06
+        ],
+        "legR": [
+          -0.5,
+          0.06
+        ],
+        "armL": [
+          -0.2,
+          -1.3
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "van": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        -0.65,
+        1.7383
+      ],
+      "rider": 0.65,
+      "pose": {
+        "legL": [
+          -0.5,
+          -0.06
+        ],
+        "legR": [
+          -0.5,
+          0.06
+        ],
+        "armL": [
+          -0.2,
+          -1.3
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "pickup": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        -0.24,
+        1.4483
+      ],
+      "rider": 0.65,
+      "pose": {
+        "legL": [
+          -0.5,
+          -0.06
+        ],
+        "legR": [
+          -0.5,
+          0.06
+        ],
+        "armL": [
+          -0.2,
+          -1.3
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "convertible": {
+      "scale": 0.3,
+      "seat": [
+        -0.36,
+        0.08,
+        0.74
+      ],
+      "rider": 0.5,
+      "pose": {
+        "legL": [
+          -1.45,
+          -0.08
+        ],
+        "legR": [
+          -1.45,
+          0.08
+        ],
+        "armL": [
+          -1.1,
+          0.2
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "motorcycle": {
+      "scale": 0.5,
+      "seat": [
+        0,
+        0.12,
+        0.9
+      ],
+      "rider": 0.55,
+      "pose": {
+        "legL": [
+          -1.2,
+          -0.35
+        ],
+        "legR": [
+          -1.2,
+          0.35
+        ],
+        "armL": [
+          -1.3,
+          0.12
+        ],
+        "armR": [
+          -1.3,
+          -0.12
+        ],
+        "lean": 0.4,
+        "yaw": 0
+      }
+    },
+    "hotdog": {
+      "scale": 0.3,
+      "seat": [
+        0,
+        -0.4,
+        1.22
+      ],
+      "rider": 0.52,
+      "pose": {
+        "legL": [
+          -1.45,
+          -0.08
+        ],
+        "legR": [
+          -1.45,
+          0.08
+        ],
+        "armL": [
+          -1.1,
+          0.2
+        ],
+        "armR": [
+          -2.8,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "skateboard": {
+      "scale": 1,
+      "seat": [
+        0,
+        0,
+        0.34
+      ],
+      "rider": 0.8,
+      "pose": {
+        "legL": [
+          0,
+          -0.24
+        ],
+        "legR": [
+          0,
+          0.24
+        ],
+        "armL": [
+          0.1,
+          -1.15
+        ],
+        "armR": [
+          0.1,
+          1.15
+        ],
+        "lean": 0,
+        "yaw": 1.5708
+      }
+    },
+    "scooter": {
+      "scale": 1,
+      "seat": [
+        0,
+        0,
+        0.325
+      ],
+      "rider": 0.75,
+      "pose": {
+        "legL": [
+          0,
+          -0.05
+        ],
+        "legR": [
+          0.3,
+          0.05
+        ],
+        "armL": [
+          -1.15,
+          0.12
+        ],
+        "armR": [
+          -1.15,
+          -0.12
+        ],
+        "lean": 0.18,
+        "yaw": 0
+      }
+    },
+    "rocket": {
+      "scale": 1,
+      "seat": [
+        0,
+        0.06,
+        0.495
+      ],
+      "rider": 0.62,
+      "pose": {
+        "legL": [
+          -0.95,
+          -0.6
+        ],
+        "legR": [
+          -0.95,
+          0.6
+        ],
+        "armL": [
+          -1.45,
+          0.18
+        ],
+        "armR": [
+          -1.45,
+          -0.18
+        ],
+        "lean": 0.45,
+        "yaw": 0
+      }
+    },
+    "cart": {
+      "scale": 1,
+      "seat": [
+        0,
+        0.06,
+        0.42
+      ],
+      "rider": 0.7,
+      "pose": {
+        "legL": [
+          -1.35,
+          -0.25
+        ],
+        "legR": [
+          -1.35,
+          0.25
+        ],
+        "armL": [
+          -2.85,
+          -0.35
+        ],
+        "armR": [
+          -2.85,
+          0.35
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    },
+    "bathtub": {
+      "scale": 1,
+      "seat": [
+        0,
+        0.06,
+        0.305
+      ],
+      "rider": 0.66,
+      "pose": {
+        "legL": [
+          -1.4,
+          -0.15
+        ],
+        "legR": [
+          -1.4,
+          0.15
+        ],
+        "armL": [
+          -0.25,
+          -1.15
+        ],
+        "armR": [
+          -0.25,
+          1.15
+        ],
+        "lean": -0.22,
+        "yaw": 0
+      }
+    },
+    "carpet": {
+      "scale": 1,
+      "seat": [
+        0,
+        0.06,
+        0.3
+      ],
+      "rider": 0.7,
+      "pose": {
+        "legL": [
+          -1.5,
+          -0.55
+        ],
+        "legR": [
+          -1.5,
+          0.55
+        ],
+        "armL": [
+          -0.35,
+          -0.5
+        ],
+        "armR": [
+          -2.7,
+          0.3
+        ],
+        "lean": 0,
+        "yaw": 0
+      }
+    }
+  }
+}

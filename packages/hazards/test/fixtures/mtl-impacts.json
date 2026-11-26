@@ -1,0 +1,58 @@
+{
+ "help": "",
+ "success": true,
+ "result": {
+  "fields": [
+   {
+    "id": "id_request",
+    "type": "text"
+   },
+   {
+    "id": "streetimpacttype",
+    "type": "text"
+   },
+   {
+    "id": "name",
+    "type": "text"
+   }
+  ],
+  "records": [
+   {
+    "id_request": "65df55d2d366dc0019e6085c",
+    "streetimpacttype": "Voie de stationnement obstruée",
+    "name": "rue De Richelieu"
+   },
+   {
+    "id_request": "67aa3ef05408a50019f0945a",
+    "streetimpacttype": "Rue barrée",
+    "name": "rue de Cannes"
+   },
+   {
+    "id_request": "67aa441d5408a50019f0954e",
+    "streetimpacttype": "Voie de circulation obstruée",
+    "name": "boulevard Viau"
+   },
+   {
+    "id_request": "6af4e1802889b2709f680cc6",
+    "streetimpacttype": "Voie de stationnement obstruée",
+    "name": "avenue de l'Hôtel-de-Ville"
+   },
+   {
+    "id_request": "6ad611f4d4f58c1f3662f079",
+    "streetimpacttype": "Voie de circulation obstruée",
+    "name": "chemin de la Côte-de-Liesse"
+   },
+   {
+    "id_request": "6ad670832889b2709fbdf259",
+    "streetimpacttype": "Rue barrée",
+    "name": "rue des Seigneurs"
+   },
+   {
+    "id_request": "6ad758ac2889b2709fc2e557",
+    "streetimpacttype": "Rue barrée",
+    "name": "avenue Rita-Levi-Montalcini"
+   }
+  ],
+  "total": 7
+ }
+}

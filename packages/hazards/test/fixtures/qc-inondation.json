@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"numberMatched": 1,
+"name": "evenements_inondation",
+"bbox": [ -68.472654, 49.395600, -68.469411, 49.404287 ],                                                                          
+"features": [
+{ "type": "Feature", "properties": { "identifiant": 129009, "entrave": "Circulation en alternance", "numeroRoute": "389", "localisation": "R-389 à la hauteur km 38", "direction": "SUD et NORD", "municipalite": "Secteur Rivière-aux-Outardes", "duree": "Indéterminée", "cause": "Inondation", "consequence": "", "detour": "", "regions": "(1:Côte-Nord)", "regionsDiffusion": "(1:Côte-Nord)", "enVigueurDepuis": "2026-11-23T18:04:00", "couleurLigne": "#FF6A33" }, "bbox": [ -68.472654, 49.3956, -68.469411, 49.404287 ], "geometry": { "type": "LineString", "coordinates": [ [ -68.469411, 49.3956 ], [ -68.472528, 49.402516 ], [ -68.472654, 49.404287 ] ] } }
+]
+}

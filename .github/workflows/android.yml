@@ -1,0 +1,64 @@
+name: Android builds
+
+# Separate from CI because a React Native native build takes ~60–90 min on a private-repo runner
+# (2 vCPU / 7 GB RAM / 14 GB disk) and private repos get 2,000 free Actions minutes per month.
+# Manual (Actions tab → Run workflow) or on a release tag only: automatic per-push builds used most of the monthly
+# minutes. Local builds (pnpm android / gradlew) cover day-to-day work.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android ${{ matrix.variant }} (X3)
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [debug, release]
+    steps:
+      - name: Free disk and add swap (runner has 7 GB RAM)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift /usr/local/share/boost "$AGENT_TOOLSDIRECTORY/CodeQL"
+          sudo swapoff -a || true
+          sudo fallocate -l 12G /swapfile2 && sudo chmod 600 /swapfile2 && sudo mkswap /swapfile2 > /dev/null && sudo swapon /swapfile2
+          free -h; df -h / | tail -1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: corepack enable && corepack prepare pnpm@12.23.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: CMake 3.31.6 (long-path-capable ninja, same as local)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;3.31.6" > /dev/null
+      - name: Prebuild
+        working-directory: apps/mobile
+        env:
+          MAPBOX_PUBLIC_TOKEN: ${{ secrets.MAPBOX_PUBLIC_TOKEN }}
+        run: CI=1 npx expo prebuild --platform android
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        working-directory: apps/mobile/android
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
+        run: |
+          TASK=$([ "${{ matrix.variant }}" = release ] && echo bundleRelease || echo assembleDebug)
+          ./gradlew $TASK --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a \
+            "-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m" -Pkotlin.compiler.execution.strategy=in-process
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.variant }}
+          path: |
+            apps/mobile/android/app/build/outputs/apk/debug/*.apk
+            apps/mobile/android/app/build/outputs/bundle/release/*.aab

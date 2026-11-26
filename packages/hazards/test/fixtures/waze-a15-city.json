@@ -1,0 +1,38 @@
+{
+  "alerts": [
+    {
+      "country": "CA", "city": "Ville-Centre", "reportRating": 3, "reportByMunicipalityUser": "false", "confidence": 2,
+      "reliability": 8, "type": "POLICE", "uuid": "8c1f6d0e-1a3b-4c8a-9d5e-0b7a1f2c3d4e", "roadType": 3, "magvar": 318,
+      "subtype": "POLICE_HIDING", "street": "A-15 N", "location": { "x": -73.76055, "y": 45.59150 },
+      "pubMillis": 1781546100000, "nThumbsUp": 4
+    },
+    {
+      "country": "CA", "city": "Ville-Centre", "reportRating": 2, "confidence": 1, "reliability": 6, "type": "ACCIDENT",
+      "uuid": "2b6e9f41-77c0-4d1e-8a52-6f3e0c9b1a77", "roadType": 3, "magvar": 140, "subtype": "ACCIDENT_MINOR",
+      "street": "A-15 S", "location": { "x": -73.79312, "y": 45.62180 }, "pubMillis": 1781547000000, "nThumbsUp": 1
+    },
+    {
+      "country": "CA", "city": "Boisbriand", "reportRating": 1, "confidence": 0, "reliability": 5, "type": "HAZARD",
+      "uuid": "d9a0c3b2-5e61-4f78-b1c2-93e4a5f6b7c8", "roadType": 3, "magvar": 300,
+      "subtype": "HAZARD_ON_ROAD_OBJECT", "street": "A-640 O", "location": { "x": -73.82310, "y": 45.64290 },
+      "pubMillis": 1781547600000, "nThumbsUp": 0
+    },
+    {
+      "country": "CA", "city": "Ville-Centre", "reliability": 7, "type": "ROAD_CLOSED", "uuid": "5f0e1d2c-3b4a-4958-8776-655443322110",
+      "subtype": "ROAD_CLOSED_CONSTRUCTION", "street": "Boul. Saint-Gabriel O", "location": { "x": -73.73520, "y": 45.56610 },
+      "pubMillis": 1781500000000, "nThumbsUp": 2, "magvar": 270
+    },
+    { "type": "UNKNOWN_NEW_TYPE", "uuid": "x", "location": { "x": -73.7, "y": 45.5 }, "pubMillis": 1781547600000 }
+  ],
+  "jams": [
+    {
+      "uuid": 2041775231, "level": 4, "speedKMH": 6.2, "street": "A-15 N", "pubMillis": 1781547500000,
+      "line": [ { "x": -73.7700, "y": 45.6010 }, { "x": -73.7760, "y": 45.6070 }, { "x": -73.7820, "y": 45.6120 } ]
+    },
+    {
+      "uuid": 2041775232, "level": 1, "street": "Boul. Dubois", "pubMillis": 1781547500000,
+      "line": [ { "x": -73.80, "y": 45.60 }, { "x": -73.81, "y": 45.61 } ]
+    }
+  ],
+  "startTimeMillis": 1781547480000, "endTimeMillis": 1781547540000
+}

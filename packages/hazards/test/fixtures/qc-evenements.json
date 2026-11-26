@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "evenements",
+"bbox": [ -75.644408, 45.673633, -75.124266, 50.750186 ],                                                                          
+"features": [
+{ "type": "Feature", "properties": { "identifiant": 81387, "entrave": "Circulation en alternance", "numeroRoute": "", "localisation": "chemin du Barrage sur le pont au-dessus de la rivière Blanche. Largeur de la voie réduite à 4,6 mètres.", "direction": "OUEST et EST", "municipalite": "Val-des-Monts", "duree": "Indéterminée", "cause": "Mesures préventives", "consequence": "", "detour": "", "regions": "(1:Outaouais)", "regionsDiffusion": "(1:Outaouais)", "enVigueurDepuis": "2025-07-30T11:17:00", "couleurLigne": "#FF6A33" }, "bbox": [ -75.644408, 45.673633, -75.643941, 45.673896 ], "geometry": { "type": "LineString", "coordinates": [ [ -75.644408, 45.673633 ], [ -75.643941, 45.673896 ] ] } },
+{ "type": "Feature", "properties": { "identifiant": 105053, "entrave": "Circulation en alternance", "numeroRoute": "", "localisation": "route du Nord à la hauteur rivière Broadback", "direction": "SUD et NORD", "municipalite": "Eeyou Istchee Baie-James", "duree": "Indéterminée", "cause": "Mesures préventives", "consequence": "", "detour": "", "regions": "(1:Nord-du-Québec)", "regionsDiffusion": "(1:Nord-du-Québec)", "enVigueurDepuis": "2024-12-12T10:57:00", "couleurLigne": "#FF6A33" }, "bbox": [ -75.124715, 50.749288, -75.124266, 50.750186 ], "geometry": { "type": "LineString", "coordinates": [ [ -75.124266, 50.749288 ], [ -75.124715, 50.750186 ] ] } }
+]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@crewmap/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/core.ts",
+  "types": "src/core.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "start": "node --experimental-strip-types src/server.ts"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.26.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "@crewmap/p2p": "workspace:*",
+    "libsodium-wrappers-sumo": "^0.8.4"
+  },
+  "exports": {
+    ".": "./src/core.ts"
+  }
+}

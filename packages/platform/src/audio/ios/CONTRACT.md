@@ -1,0 +1,7 @@
+# iOS: AudioService
+- **Native API:** AVAudioSession (`.playback`, mode `.voicePrompt`, options `.duckOthers` + `.interruptSpokenAudioAndMixWithOthers` for voice, `.mixWithOthers` for emote clips); recording via `expo-audio` (cross-platform).
+- **speakSegments:** one long-lived `AVSpeechSynthesizer`; enqueue one `AVSpeechUtterance` per segment (the synthesizer queues them back-to-back, no gaps). Per segment set `utterance.voice = AVSpeechSynthesisVoice(language:)` with `en-CA`/`fr-CA`/`ru-RU` (fallback `en-US`/`fr-FR`), preferring `.enhanced`/`.premium` quality from `speechVoices()`. `prefersAssistiveTechnologySettings = false`. Activate the session before the first utterance; deactivate with `.notifyOthersOnDeactivation` in `didFinish` of the last one (also on `didCancel`). Resolve the promise there.
+- **Voice choice:** one speaker per utterance by default (en-CA / fr-CA / ru-RU, highest quality); `voiceName` returns its identifier, `voices` lists `speechVoices()` (name, language, quality, network false).
+- **voiceStatus:** `'ok'` when `AVSpeechSynthesisVoice.speechVoices()` contains the language, else `'missing'`.
+- **installVoice:** no public deep link to Settings → Accessibility → Spoken Content → Voices; open `UIApplication.openSettingsURLString` and return `true`.
+- **Limits:** background audio requires `UIBackgroundModes: audio` (set); `NSMicrophoneUsageDescription` (set).

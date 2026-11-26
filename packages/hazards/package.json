@@ -1,0 +1,17 @@
+{
+  "name": "@crewmap/hazards",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@crewmap/shared": "workspace:*",
+    "zod": "^4.6.7",
+    "nostr-tools": "^2.26.1"
+  }
+}

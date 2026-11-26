@@ -1,0 +1,20 @@
+appId: app.crewmap
+name: F8b — avatar editor with live 3D preview
+---
+- launchApp
+- tapOn:
+    id: open-settings
+- tapOn: Your look
+- assertVisible:
+    id: avatar-preview
+- tapOn:
+    id: avatar-tab-hair
+- tapOn:
+    id: avatar-opt-afro
+- tapOn:
+    id: avatar-tab-car
+- tapOn:
+    id: avatar-car-hotdog
+- takeScreenshot: F8b-avatar-editor
+- tapOn:
+    id: avatar-save

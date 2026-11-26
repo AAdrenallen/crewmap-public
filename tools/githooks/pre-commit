@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Blocks commits that contain the owner's private terms or coordinates (lists in git-ignored .secrets/).
+ROOT="$(git rev-parse --show-toplevel)"
+source "$ROOT/tools/env.sh" >/dev/null 2>&1
+node "$ROOT/tools/privacy/check.mjs" --staged || { echo "Commit blocked by the privacy check (see above)."; exit 1; }

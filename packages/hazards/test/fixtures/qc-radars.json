@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "radars_photos",
+"bbox": [ -73.595000, 45.494590, -73.442200, 45.571400 ],                                                                          
+"features": [
+{ "type": "Feature", "properties": { "region": "Montréal", "municipalite": "Montréal", "arrondissement": "Côte-des-Neiges - Notre-Dame-de-Grâce", "description": "Chemin McAllister en direction est, entre Le Boulevard et l'avenue Cedar", "typeAppareil": "Radar photo fixe", "urlImage": "https://www.transports.gouv.qc.ca/fr/securite-signalisation/securite/radars-photo-surveillance-feux-rouges/emplacements/Pages/fiche-technique.aspx?idSite=4", "dateDebutService": "2011-11-01T00:00:00", "dateFinService": "" }, "bbox": [ -73.595, 45.49459, -73.595, 45.49459 ], "geometry": { "type": "Point", "coordinates": [ -73.595, 45.49459 ] } },
+{ "type": "Feature", "properties": { "region": "Montérégie", "municipalite": "Boucherville", "arrondissement": "", "description": "Autoroute 20 en direction ouest, environ 200 m avant la bretelle du boulevard de Mortagne", "typeAppareil": "Radar photo fixe", "urlImage": "https://www.transports.gouv.qc.ca/fr/securite-signalisation/securite/radars-photo-surveillance-feux-rouges/emplacements/Pages/fiche-technique.aspx?idSite=8", "dateDebutService": "2011-11-01T00:00:00", "dateFinService": "" }, "bbox": [ -73.4422, 45.5714, -73.4422, 45.5714 ], "geometry": { "type": "Point", "coordinates": [ -73.4422, 45.5714 ] } }
+]
+}

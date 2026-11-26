@@ -1,0 +1,11 @@
+appId: app.crewmap
+name: F1b — live speed, posted limit, speeding indicator (replay)
+---
+- openLink: crewmap://dev/replay?name=speeding&speedup=10
+- extendedWaitUntil:
+    visible:
+      id: speed-limit
+    timeout: 60000
+- assertVisible:
+    id: speed-value
+- takeScreenshot: F1b-speed-limit
