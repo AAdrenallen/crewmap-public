@@ -1,0 +1,87 @@
+{
+ "elements": [
+  {
+   "type": "node",
+   "id": 9647381616,
+   "lat": 45.5010331,
+   "lon": -73.5729892,
+   "tags": {
+    "access": "yes",
+    "amenity": "charging_station",
+    "bicycle": "no",
+    "brand": "Circuit électrique",
+    "brand:en": "Electric Circuit",
+    "brand:fr": "Circuit électrique",
+    "brand:wikidata": "Q24934590",
+    "brand:wikipedia": "fr:Le Circuit électrique",
+    "capacity": "4",
+    "image": "https://web.archive.org/web/20220407004303/https://westnordost.de/p/87428.jpg",
+    "name": "Circuit électrique",
+    "name:en": "Electric Circuit",
+    "name:fr": "Circuit électrique",
+    "operator": "Circuit électrique",
+    "operator:en": "Electric Circuit",
+    "operator:fr": "Circuit électrique",
+    "operator:wikidata": "Q24934590",
+    "operator:wikipedia": "fr:Le Circuit électrique",
+    "socket:type1": "4",
+    "socket:type1:output": "7.2"
+   }
+  },
+  {
+   "type": "node",
+   "id": 10825591165,
+   "lat": 45.5015228,
+   "lon": -73.5670696,
+   "tags": {
+    "access": "yes",
+    "amenity": "charging_station",
+    "brand": "Circuit électrique",
+    "brand:en": "Electric Circuit",
+    "brand:fr": "Circuit électrique",
+    "brand:wikidata": "Q24934590",
+    "brand:wikipedia": "fr:Le Circuit électrique",
+    "capacity": "2",
+    "image": "https://web.archive.org/web/20230419230533/https://westnordost.de/p/93947.jpg",
+    "name": "Circuit électrique",
+    "name:en": "Electric Circuit",
+    "name:fr": "Circuit électrique",
+    "operator": "Circuit électrique",
+    "operator:en": "Electric Circuit",
+    "operator:fr": "Circuit électrique",
+    "operator:wikidata": "Q24934590",
+    "operator:wikipedia": "fr:Le Circuit électrique",
+    "socket:type1": "2",
+    "socket:type1:output": "7.2"
+   }
+  },
+  {
+   "type": "node",
+   "id": 11673275940,
+   "lat": 45.5069917,
+   "lon": -73.5653988,
+   "tags": {
+    "access": "yes",
+    "amenity": "charging_station",
+    "brand": "Circuit électrique",
+    "brand:en": "Electric Circuit",
+    "brand:fr": "Circuit électrique",
+    "brand:wikidata": "Q24934590",
+    "brand:wikipedia": "fr:Le Circuit électrique",
+    "capacity": "4",
+    "name": "Circuit électrique",
+    "name:en": "Electric Circuit",
+    "name:fr": "Circuit électrique",
+    "operator": "Circuit électrique",
+    "operator:en": "Electric Circuit",
+    "operator:fr": "Circuit électrique",
+    "operator:wikidata": "Q24934590",
+    "operator:wikipedia": "fr:Le Circuit électrique",
+    "socket:chademo": "4",
+    "socket:chademo:output": "50",
+    "socket:type1_combo": "4",
+    "socket:type1_combo:output": "50"
+   }
+  }
+ ]
+}

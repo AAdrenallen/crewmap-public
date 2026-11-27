@@ -9,8 +9,8 @@ const TZ = -300; // Montréal standard time (UTC−5) for deterministic tests
 const NOW = Date.UTC(2026, 10, 20, 17, 0); // Fri 2026-11-20 12:00 local
 
 describe('F3 emotes', () => {
-  it('has all eight named presets and validates custom clips', () => {
-    expect(EMOTE_PRESETS).toEqual(['getMeFood', 'areWeThereYet', 'whereAreYou', 'hurryUp', 'callMe', 'honkHonk', 'onMyWay', 'missYou']);
+  it('keeps the eight legacy presets first and validates custom clips', () => {
+    expect(EMOTE_PRESETS.slice(0, 8)).toEqual(['getMeFood', 'areWeThereYet', 'whereAreYou', 'hurryUp', 'callMe', 'honkHonk', 'onMyWay', 'missYou']);
     expect(validateEmote({ preset: 'honkHonk' })).toBeNull();
     expect(validateEmote({ preset: 'custom', clip: 'A'.repeat(1000), clipMs: 4000 })).toBeNull();
     expect(validateEmote({ preset: 'custom', clip: 'A'.repeat(1000), clipMs: 6000 })).toBe('clip too long');

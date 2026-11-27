@@ -1,4 +1,5 @@
 import { angleDiffDeg, bearingDeg, cumulativeDistances, destination, haversineM, pointAlong, projectOnPolyline, slicePolyline, type LatLng } from '../geo';
+import { inQuebec } from './nameLang';
 import type { NavRoute } from './route';
 
 /**
@@ -36,6 +37,22 @@ export const CANDIDATES = {
   labelDiffM: 1000,
   /** Among a route's distinctive roads (≥ this share of its most distinctive one), the first one driven names it. */
   labelFirstFrac: 0.33,
+  /**
+   * End zones: the first/last max(endClearM, endZoneFrac × length) (≤ endZoneMaxM) of a route are the streets everyone
+   * takes to leave the origin / reach the door. Road driven there weighs `endZoneWeight` when naming a route, and a
+   * route that differs from the kept ones only there is kept only after every route that differs mid-route.
+   */
+  endZoneFrac: 0.1,
+  endZoneMaxM: 8000,
+  endZoneWeight: 0.2,
+  /** Routes that differ from the kept ones only in an end zone: at most this many are shown. */
+  maxEndVariants: 1,
+  /** A second "corridor" road joins the label when it carries ≥ this share of the route and is a numbered / major road. */
+  labelContextFrac: 0.15,
+  /** Naming weight per Mapbox Streets class (numbered roads without a class weigh like primary). */
+  classWeight: { motorway: 3, trunk: 2.5, primary: 2, secondary: 1.5, tertiary: 1, street: 0.6, street_limited: 0.5, service: 0.3, track: 0.3 } as Record<string, number>,
+  /** A plausible route with at least this motorway/trunk share keeps a slot (siblings of one corridor never crowd it out). */
+  highwaySlotShare: 0.4,
   /** Sibling exits: side roads within this distance before a discovered divergence, probed this far along. */
   junctionWindowM: 1500,
   junctionProbeM: 200,
@@ -66,6 +83,28 @@ export const CANDIDATES = {
     /** Routes within max(tieMinS, tieFrac × best) of the best expected time are equivalent. */
     tieMinS: 150,
     tieFrac: 0.04,
+    /**
+     * Ranking-only costs (s), never shown as ETA. Router speeds on local streets assume free flow between the few
+     * controls it knows (driveways, parked cars, unmapped stops, pedestrians); collectors less so: s per km driven.
+     * A left turn across traffic waits for a gap (HCM two-way-stop major-street left ≈ 5–10 s more than a right).
+     */
+    minorKmS: 10,
+    tertiaryKmS: 4,
+    leftTurnS: 5,
+    /**
+     * A right turn at a signal where right on red is banned (island of Montréal, D61) waits for the green: about half
+     * a typical urban red (30–60 s cycles, HCM uniform delay) beyond what a router that allows RTOR assumes.
+     */
+    noRedRightS: 8,
+    /** A closed incident on the route (Mapbox `incidents[].closed`): never recommended while another route exists. */
+    closedS: 3600,
+    /** Motorway-heavy routes stay eligible this much longer (× motorway share): steadier, fewer surprises. */
+    fastBandS: 120,
+    /** Tags: "fewer turns" needs this many fewer turns + controls than the next route; "shortest" ≥ this share shorter. */
+    fewerTurnsMin: 4,
+    shorterFrac: 0.05,
+    /** "Highway" tag: motorway/trunk share at least this, and the most of all routes. */
+    highwayTagShare: 0.5,
     /** Tie-break penalty (lower wins): control allowance − motorway/trunk share × fastShareS − habit trips × habitS. */
     fastShareS: 120,
     habitS: 60,
@@ -84,7 +123,8 @@ export const CANDIDATES = {
 };
 
 export type CandidateConfig = typeof CANDIDATES;
-export type CandidateSource = 'base' | 'split' | 'learned' | 'cache';
+/** `probe`: a corridor probe (point exclusion on the fastest route, or "stay on the motorway" via). */
+export type CandidateSource = 'base' | 'split' | 'learned' | 'cache' | 'probe';
 
 export interface Via {
   lat: number;
@@ -102,11 +142,18 @@ export interface FoundRoute {
 }
 
 export type RouteBadge = 'recommended' | 'fastestNow';
+/** Short facts shown on a route card (set by `recommend`, only where they tell the routes apart). */
+export type RouteTag = 'fastest' | 'highway' | 'fewerTurns' | 'noTolls' | 'shortest';
 
 export interface RouteCandidate extends FoundRoute {
   label: RouteLabel;
   /** Expected time (s): (live + control allowance) × learned correction. Set by `recommend`. */
   expectedS?: number;
+  /** Ranking cost (s): expectedS + road-class, left-turn and hazard penalties. Set by `recommend`. */
+  costS?: number;
+  tags?: RouteTag[];
+  /** Live time minus the fastest candidate's (s, ≥ 0). */
+  deltaS?: number;
   badge?: RouteBadge | null;
   /** Minutes the live time is notably above typical (0 = not notable). */
   overUsualMin?: number;
@@ -219,80 +266,208 @@ export function selectCandidates(found: FoundRoute[], dest: LatLng, cfg: Candida
   const byTime = (a: FoundRoute, b: FoundRoute) => a.route.durationS - b.route.durationS;
   const fastest = [...plausible].sort(byTime)[0]!;
   // … then routes found by a previous search (stable candidate set), then new computed ones.
-  const rank: Record<CandidateSource, number> = { base: 0, learned: 1, cache: 2, split: 3 };
-  const order = [fastest, ...plausible.filter((f) => f !== fastest).sort((a, b) => rank[a.source] - rank[b.source] || byTime(a, b))];
+  const rank: Record<CandidateSource, number> = { base: 0, learned: 1, probe: 1, cache: 2, split: 3 };
+  const rest = plausible.filter((f) => f !== fastest).sort((a, b) => rank[a.source] - rank[b.source] || byTime(a, b));
+  // The quickest motorway-heavy route keeps a slot right after the fastest (siblings of one corridor can't crowd it out).
+  const highway = fastShare(fastest.route) >= cfg.highwaySlotShare ? undefined : [...rest].filter((f) => fastShare(f.route) >= cfg.highwaySlotShare).sort(byTime)[0];
+  const order = [fastest, ...(highway ? [highway] : []), ...rest.filter((f) => f !== highway)];
   const kept: FoundRoute[] = [];
+  // Pass 1: routes that differ mid-route (other corridors); pass 2: at most `maxEndVariants` that differ only near an end.
   for (const f of order) {
     if (kept.length >= cfg.maxRoutes) break;
-    if (kept.every((k) => isDistinct(k.route.geometry, f.route.geometry, cfg))) kept.push(f);
+    if (kept.every((k) => isDistinct(k.route.geometry, f.route.geometry, cfg) && isMidDistinct(k.route.geometry, f.route.geometry, cfg))) kept.push(f);
+  }
+  let endVariants = 0;
+  for (const f of order) {
+    if (kept.length >= cfg.maxRoutes || endVariants >= cfg.maxEndVariants) break;
+    if (!kept.includes(f) && kept.every((k) => isDistinct(k.route.geometry, f.route.geometry, cfg))) {
+      kept.push(f);
+      endVariants++;
+    }
   }
   return kept.sort(byTime);
 }
 
+/** Share of a route on motorway/trunk roads (0 without road-class data). */
+export function fastShare(r: NavRoute): number {
+  return r.controls && r.distanceM > 0 ? Math.min(1, r.controls.fastRoadM / r.distanceM) : 0;
+}
+
+/** Length of each end zone of a route (m). */
+export function endZoneM(lengthM: number, cfg: CandidateConfig = CANDIDATES): number {
+  return Math.min(cfg.endZoneMaxM, Math.max(cfg.endClearM, cfg.endZoneFrac * lengthM));
+}
+
+function midSlice(line: LatLng[], cfg: CandidateConfig): LatLng[] {
+  const cum = cumulativeDistances(line);
+  const total = cum[cum.length - 1] ?? 0;
+  const z = endZoneM(total, cfg);
+  return total > 2 * z ? slicePolyline(line, cum, z, total - z) : [];
+}
+
+/** Distinct on the middle of the routes (end zones ignored): another corridor, not just another last street. */
+export function isMidDistinct(a: LatLng[], b: LatLng[], cfg: CandidateConfig = CANDIDATES): boolean {
+  const ma = midSlice(a, cfg);
+  const mb = midSlice(b, cfg);
+  if (ma.length < 2 || mb.length < 2) return isDistinct(a, b, cfg);
+  const la = polylineLengthM(ma);
+  const lb = polylineLengthM(mb);
+  const ua = la - coveredLengthM(ma, [new Footprint(b, cfg.gridM)], cfg.gridM);
+  const ub = lb - coveredLengthM(mb, [new Footprint(a, cfg.gridM)], cfg.gridM);
+  const shorter = Math.min(la, lb);
+  const ratio = shorter > 0 ? Math.min(la - ua, lb - ub) / shorter : 1;
+  const need = Math.max(cfg.minUniqueM, cfg.minUniqueFrac * Math.min(polylineLengthM(a), polylineLengthM(b)));
+  return ratio < cfg.distinctOverlap || (ua >= need && ub >= need);
+}
+
 // --- labels -----------------------------------------------------------------------------------------------------------
 
-interface RoadUse {
+export interface RoadUse {
+  /** Normalised ref ("15", direction suffix dropped) or the road name. */
   key: string;
   lengthM: number;
+  /** Length weighted for naming: mid-route road counts fully, end-zone road × `endZoneWeight`. */
+  effM: number;
+  isRef: boolean;
+  /** Class of the longest step on this road (Mapbox Streets v8), if known. */
+  cls?: string;
+  firstAlongM: number;
+  /** Where the road is first entered (for local ref styles). */
+  at: LatLng;
 }
 
-/** Road keys of a step: its refs ("148", "15"; a concurrent "50;148" gives both), else its name. */
-function stepKeys(route: NavRoute): string[][] {
-  const refOfName = new Map<string, string[]>();
-  for (const s of route.steps) if (s.name && s.ref) refOfName.set(s.name, refs(s.ref));
-  return route.steps.map((s) => (s.ref ? refs(s.ref) : (refOfName.get(s.name) ?? (s.name ? [s.name] : []))));
-}
-
-/** Roads in driving order, merged across steps (a ref-less step of a named highway inherits its ref). */
-export function roadsOf(route: NavRoute): RoadUse[] {
-  const out: RoadUse[] = [];
-  const byKey = new Map<string, RoadUse>();
-  stepKeys(route).forEach((keys, i) => {
-    for (const key of keys) {
-      const u = byKey.get(key);
-      if (u) u.lengthM += route.steps[i]!.distanceM;
-      else {
-        const n = { key, lengthM: route.steps[i]!.distanceM };
-        byKey.set(key, n);
-        out.push(n);
-      }
-    }
-  });
+/** Name → refs over a set of routes: a ref-less step of a numbered highway inherits the ref another step carries. */
+export function refsByName(routes: NavRoute[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const r of routes) for (const s of r.steps) if (s.name && s.ref && !out.has(s.name)) out.set(s.name, refs(s.ref));
   return out;
 }
 
+/** Road keys of a step: its refs ("148", "15"; a concurrent "50;148" gives both), else its name. */
+function stepKeys(route: NavRoute, refOfName: Map<string, string[]> = refsByName([route])): { keys: string[]; isRef: boolean }[] {
+  return route.steps.map((s) => {
+    if (s.ref) return { keys: refs(s.ref), isRef: true };
+    const inherited = s.name ? refOfName.get(s.name) : undefined;
+    if (inherited) return { keys: inherited, isRef: true };
+    return { keys: s.name ? [s.name] : [], isRef: false };
+  });
+}
+
+/** Mid-route share of [a, b] along a route of length `total` (end zones excluded). */
+function midShare(a: number, b: number, total: number, cfg: CandidateConfig): number {
+  const z = endZoneM(total, cfg);
+  const len = b - a;
+  if (len <= 0) return 0;
+  return Math.max(0, Math.min(b, total - z) - Math.max(a, z)) / len;
+}
+
+/** Roads in driving order, merged across steps (a ref-less step of a named highway inherits its ref). */
+export function roadsOf(route: NavRoute, refOfName?: Map<string, string[]>, cfg: CandidateConfig = CANDIDATES): RoadUse[] {
+  const out: RoadUse[] = [];
+  const byKey = new Map<string, RoadUse & { clsM: number }>();
+  const total = route.cum[route.cum.length - 1] ?? route.distanceM;
+  stepKeys(route, refOfName).forEach(({ keys, isRef }, i) => {
+    const s = route.steps[i]!;
+    const mid = midShare(s.startAlongM, s.endAlongM, total, cfg);
+    const eff = s.distanceM * (mid + (1 - mid) * cfg.endZoneWeight);
+    for (const key of keys) {
+      let u = byKey.get(key);
+      if (!u) {
+        u = { key, lengthM: 0, effM: 0, isRef, firstAlongM: s.startAlongM, at: s.maneuver.location, clsM: -1 };
+        byKey.set(key, u);
+        out.push(u);
+      }
+      u.lengthM += s.distanceM;
+      u.effM += eff;
+      if (s.roadClass && s.distanceM > u.clsM) {
+        u.cls = s.roadClass;
+        u.clsM = s.distanceM;
+      }
+    }
+  });
+  return out.map((u) => {
+    const { clsM: _c, ...rest } = byKey.get(u.key)!;
+    return rest;
+  });
+}
+
 function refs(ref: string): string[] {
-  return ref.split(';').map((r) => r.trim()).filter(Boolean);
+  return ref.split(';').map(normRef).filter(Boolean);
+}
+
+/** "20-O", "40 E", "15 Nord" → the number; direction suffixes would split one highway into two roads. */
+export function normRef(ref: string): string {
+  return ref.trim().replace(/[\s-]+(N|S|E|O|W|NORD|SUD|EST|OUEST|NORTH|SOUTH|EAST|WEST)$/i, '');
 }
 
 /**
- * Names each candidate by the road that tells it apart: per (route, road), the length of that road not shared
- * with the *closest* other candidate (the minimum over the others, measured on the geometry). Pairs are assigned
- * best-first, one road per route and one route per road; a lone route gets its longest road; nothing distinctive
- * gives a letter.
+ * How a driver says a numbered road: in Québec "A-15" (autoroutes 1–99 and 400+) and "R-148" (routes 100–399);
+ * elsewhere the ref as published (it is already local, e.g. "I 87", "417", "CR 17").
+ */
+export function displayRef(ref: string, at: LatLng | null): string {
+  const r = normRef(ref);
+  if (!/^\d{1,3}[A-Z]?$/.test(r) || !at || !inQuebec(at.lat, at.lng)) return r;
+  const n = parseInt(r, 10);
+  return n < 100 || n >= 400 ? `A-${r}` : `R-${r}`;
+}
+
+function roadWeight(road: RoadUse, cfg: CandidateConfig): number {
+  if (road.cls && cfg.classWeight[road.cls] !== undefined) return cfg.classWeight[road.cls]!;
+  return road.isRef ? cfg.classWeight.primary! : 1;
+}
+
+const MAJOR = new Set(['motorway', 'trunk', 'primary']);
+
+/**
+ * Names each candidate by the road(s) that tell it apart: per (route, road), the length of that road not shared
+ * with the *closest* other candidate (the minimum over the others, measured on the geometry), weighted by road class
+ * and by where it lies (end-zone streets weigh little). Pairs are assigned best-first, one road per route and one
+ * route per road. A numbered / major road carrying ≥ `labelContextFrac` of the route joins as corridor context
+ * ("A-15, Montée Nord"), in driving order. A lone route gets its main road; nothing distinctive gives a letter.
  */
 export function labelCandidates(found: FoundRoute[], cfg: CandidateConfig = CANDIDATES): RouteCandidate[] {
   const prints = found.map((f) => new Footprint(f.route.geometry, cfg.gridM));
+  const names = refsByName(found.map((f) => f.route));
   const pairs: { i: number; key: string; w: number }[] = [];
+  const roads = found.map((f) => roadsOf(f.route, names, cfg));
+  const distinct: RoadUse[][] = [];
+  // End-only twins (same corridor, other last streets): the faster one is named by its corridor, so it ignores its
+  // slower twins; only the slower twin is told apart by its end roads.
+  const twin = found.map((a, i) =>
+    found.map((b, j) => i !== j && isDistinct(a.route.geometry, b.route.geometry, cfg) && !isMidDistinct(a.route.geometry, b.route.geometry, cfg)),
+  );
+  const slowerTwin = (i: number, j: number) => {
+    const di = found[i]!.route.durationS;
+    const dj = found[j]!.route.durationS;
+    return twin[i]![j]! && (dj > di || (dj === di && j > i));
+  };
   found.forEach((f, i) => {
     const r = f.route;
-    const unique = new Map<string, number>();
-    const keys = stepKeys(r);
+    const total = r.cum[r.cum.length - 1] ?? r.distanceM;
+    // Per road: unique length (raw, for the "is it distinctive" test) and weighted by where it lies (for scoring).
+    const unique = new Map<string, { raw: number; eff: number }>();
+    const keys = stepKeys(r, names);
     r.steps.forEach((s, si) => {
-      if (keys[si]!.length === 0 || s.endAlongM - s.startAlongM < 1) return;
+      if (keys[si]!.keys.length === 0 || s.endAlongM - s.startAlongM < 1) return;
       const line = slicePolyline(r.geometry, r.cum, s.startAlongM, s.endAlongM);
       const len = s.endAlongM - s.startAlongM;
       let u = len;
       prints.forEach((p, j) => {
-        if (j !== i) u = Math.min(u, len - coveredLengthM(line, [p], cfg.gridM));
+        if (j !== i && !slowerTwin(i, j)) u = Math.min(u, len - coveredLengthM(line, [p], cfg.gridM));
       });
-      for (const k of keys[si]!) unique.set(k, (unique.get(k) ?? 0) + u);
+      const mid = midShare(s.startAlongM, s.endAlongM, total, cfg);
+      for (const k of keys[si]!.keys) {
+        const cur = unique.get(k) ?? { raw: 0, eff: 0 };
+        unique.set(k, { raw: cur.raw + u, eff: cur.eff + u * (mid + (1 - mid) * cfg.endZoneWeight) });
+      }
     });
-    const mine = roadsOf(r)
-      .map((road) => ({ road, u: unique.get(road.key) ?? 0 }))
-      .filter(({ road, u }) => road.lengthM >= cfg.labelRoadM && u >= Math.min(cfg.labelDiffM, road.lengthM));
-    const maxU = Math.max(0, ...mine.map((m) => m.u));
-    mine.forEach(({ road, u }, order) => pairs.push({ i, key: road.key, w: u >= maxU * cfg.labelFirstFrac ? maxU - order * 1e-3 : u }));
+    const mine = roads[i]!
+      .map((road) => ({ road, u: unique.get(road.key) ?? { raw: 0, eff: 0 } }))
+      .filter(({ road, u }) => road.lengthM >= cfg.labelRoadM && u.raw > 0 && u.raw >= Math.min(cfg.labelDiffM, road.lengthM))
+      .map(({ road, u }) => ({ road, s: u.eff * roadWeight(road, cfg) }));
+    const maxS = Math.max(0, ...mine.map((m) => m.s));
+    distinct[i] = [...mine].sort((a, b) => b.s - a.s).map((m) => m.road);
+    mine.forEach(({ road, s }, order) => pairs.push({ i, key: road.key, w: s >= maxS * cfg.labelFirstFrac ? maxS - order * 1e-3 : s }));
   });
   pairs.sort((a, b) => b.w - a.w);
   const byRoute = new Map<number, string>();
@@ -302,9 +477,43 @@ export function labelCandidates(found: FoundRoute[], cfg: CandidateConfig = CAND
     byRoute.set(p.i, p.key);
     used.add(p.key);
   }
+  // Texts are unique: each route takes the first option nobody has, in assignment order (strongest first).
+  const texts = new Set<string>();
+  const text = (parts: RoadUse[]) => [...parts].sort((a, b) => a.firstAlongM - b.firstAlongM).map((p) => (p.isRef ? displayRef(p.key, p.at) : p.key)).join(', ');
+  const score = (r: RoadUse) => r.effM * roadWeight(r, cfg);
+  const corridor = (i: number, not: string) =>
+    roads[i]!.filter((r) => r.key !== not && (r.isRef || MAJOR.has(r.cls ?? '')) && r.effM >= cfg.labelRoadM).sort((a, b) => score(b) - score(a));
+  const labels = new Map<number, string>();
+  const take = (i: number, options: RoadUse[][]) => {
+    for (const o of options) {
+      const t = text(o);
+      if (!texts.has(t)) {
+        texts.add(t);
+        labels.set(i, t);
+        return;
+      }
+    }
+  };
+  for (const [i, key] of byRoute) {
+    const primary = roads[i]!.find((r) => r.key === key)!;
+    const minCtx = Math.max(cfg.labelRoadM, cfg.labelContextFrac * found[i]!.route.distanceM);
+    const ctx = corridor(i, key);
+    const strong = ctx.filter((c) => c.effM >= minCtx);
+    take(i, [...strong.map((c) => [primary, c]), [primary], ...ctx.filter((c) => !strong.includes(c)).map((c) => [primary, c])]);
+  }
+  // No road of its own (e.g. differs only by roads another label took): its distinctive roads with corridor context,
+  // then its two main corridor roads.
+  found.forEach((_, i) => {
+    if (labels.has(i)) return;
+    const opts: RoadUse[][] = [];
+    for (const d of distinct[i] ?? []) for (const c of corridor(i, d.key)) opts.push([d, c]);
+    const main = corridor(i, '');
+    for (let a = 0; a < main.length; a++) for (let b = a + 1; b < main.length; b++) opts.push([main[a]!, main[b]!]);
+    take(i, opts);
+  });
   let letter = 0;
   return found.map((f, i) => {
-    const road = byRoute.get(i);
+    const road = labels.get(i);
     return road ? { ...f, label: { kind: 'road', road } } : { ...f, label: { kind: 'letter', letter: String.fromCharCode(65 + letter++) } };
   });
 }

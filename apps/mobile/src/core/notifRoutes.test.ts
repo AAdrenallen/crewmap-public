@@ -51,6 +51,11 @@ describe('commandFor', () => {
     expect(commandFor(ACTION.sendBack, { type: 'emote', friendId: 'f', preset: 'hurryUp' })).toEqual({ kind: 'sendBack', friendId: 'f', preset: 'hurryUp' });
     expect(commandFor(ACTION.sendBack, { type: 'emote', friendId: 'f', preset: 'custom' })).toEqual({ kind: 'open', path: '/friend/f' });
   });
+  it('quick ping buttons send their ping, even on a custom clip', () => {
+    expect(commandFor(ACTION.pingThink, { type: 'emote', friendId: 'f', preset: 'custom' })).toEqual({ kind: 'sendBack', friendId: 'f', preset: 'thinkingOfYou' });
+    expect(commandFor(ACTION.pingOmw, { type: 'emote', friendId: 'f', preset: 'honkHonk' })).toEqual({ kind: 'sendBack', friendId: 'f', preset: 'onMyWay' });
+    expect(commandFor(ACTION.pingOmw, { type: 'emote' })).toBeNull();
+  });
   it('falls back to the tap route', () => {
     expect(commandFor('expo.default', { type: 'hazard', hazardId: 'h' })).toEqual({ kind: 'open', path: '/hazard/h' });
     expect(commandFor('x', {})).toBeNull();

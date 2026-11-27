@@ -1,0 +1,53 @@
+{
+  "_note": "Safety check-in stops (D66). Public places only. `approach`: cruise = steady speed then a quick pull-over; crawl = a queue crawling at walking pace. `overpass` is the answer to surroundingsQuery (three `out count` blocks).",
+  "scenarios": [
+    {
+      "name": "remote roadside stop (Route 117, La Vérendrye wildlife reserve)",
+      "at": { "lat": 47.1032, "lng": -76.9431 },
+      "approach": "cruise",
+      "kph": 90,
+      "places": [],
+      "overpass": { "elements": [
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } },
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } },
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } }
+      ] },
+      "expect": { "ask": true, "reason": "remote" }
+    },
+    {
+      "name": "rest-stop stop (A-20 rest area near Saint-Hyacinthe)",
+      "at": { "lat": 45.6352, "lng": -72.9605 },
+      "approach": "cruise",
+      "kph": 100,
+      "places": [],
+      "overpass": { "elements": [
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "2", "relations": "0", "total": "2" } },
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } },
+        { "type": "count", "id": 0, "tags": { "nodes": "3", "ways": "2", "relations": "0", "total": "5" } }
+      ] },
+      "expect": { "ask": false, "reason": "restStop" }
+    },
+    {
+      "name": "home stop (home saved at Montréal City Hall, stop two blocks away)",
+      "at": { "lat": 45.5110, "lng": -73.5560 },
+      "approach": "cruise",
+      "kph": 40,
+      "places": [{ "lat": 45.5088, "lng": -73.5540, "radiusM": 80, "home": true }],
+      "overpass": null,
+      "expect": { "ask": false, "reason": "home" }
+    },
+    {
+      "name": "traffic jam (Jacques Cartier Bridge)",
+      "at": { "lat": 45.5226, "lng": -73.5409 },
+      "approach": "crawl",
+      "kph": 60,
+      "places": [],
+      "overpass": { "elements": [
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } },
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } },
+        { "type": "count", "id": 0, "tags": { "nodes": "0", "ways": "0", "relations": "0", "total": "0" } }
+      ] },
+      "expect": { "ask": false, "reason": "jam" }
+    }
+  ]
+}

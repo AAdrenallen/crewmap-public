@@ -26,6 +26,8 @@ export interface SharingPolicy {
   statsVis: StatsVisibility;
   /** Drive-along with this phone. Only set by a per-friend override; absent = allowed when location is exact. */
   driveAlong?: boolean;
+  /** Safety check-in (D66): this crew is told where I stopped if I don't answer. Opt-in: absent = off. */
+  checkIn?: boolean;
 }
 
 export const DEFAULT_SHARING: SharingPolicy = {
@@ -52,8 +54,8 @@ export function normalizePolicy(p: Partial<SharingPolicy> | null | undefined): S
 /**
  * Per-friend override (D52): what ONE friend sees beyond (or below) the crew policy. Keyed by deviceId and applied
  * in every crew that carries that friend, so a restriction cannot leak through another crew. Absent field = crew
- * default. Stats and places are not here: they live in the crew-wide Yjs doc, where a per-member restriction cannot
- * be enforced.
+ * default. Places are not here: they live in the crew-wide Yjs doc, where a per-member restriction cannot be enforced.
+ * Stats are (D56): the stats aggregate is sealed per recipient, gated by statsAllowed().
  */
 export interface UserOverride {
   location?: LocationShare;
@@ -62,9 +64,15 @@ export interface UserOverride {
   /** Battery level and charging. */
   battery?: boolean;
   driveAlong?: boolean;
+  /** Stats at all, trip history, and per-field visibility (D56). */
+  stats?: boolean;
+  trips?: boolean;
+  statsVis?: Partial<StatsVisibility>;
+  /** Safety check-in alerts to this friend (D66). */
+  checkIn?: boolean;
 }
 
-export const OVERRIDE_KEYS = ['location', 'speed', 'battery', 'driveAlong'] as const satisfies readonly (keyof UserOverride)[];
+export const OVERRIDE_KEYS = ['location', 'speed', 'battery', 'driveAlong', 'stats', 'trips', 'statsVis', 'checkIn'] as const satisfies readonly (keyof UserOverride)[];
 
 /** Override ?? crew policy. */
 export function resolveShare(pol: SharingPolicy, ov: UserOverride | null | undefined): SharingPolicy {
@@ -74,13 +82,26 @@ export function resolveShare(pol: SharingPolicy, ov: UserOverride | null | undef
   if (ov.speed !== undefined) out.speed = ov.speed;
   if (ov.battery !== undefined) out.battery = ov.battery;
   if (ov.driveAlong !== undefined) out.driveAlong = ov.driveAlong;
+  if (ov.stats !== undefined) out.stats = ov.stats;
+  if (ov.trips !== undefined) out.trips = ov.trips;
+  if (ov.statsVis) out.statsVis = { ...pol.statsVis, ...ov.statsVis };
+  if (ov.checkIn !== undefined) out.checkIn = ov.checkIn;
   return out;
+}
+
+/**
+ * May a safety check-in alert (with the exact stop position) go to this friend (D66)? Only when the resolved policy
+ * opts in. A friend hidden by their own override is left out unless that override opts them in explicitly.
+ */
+export function checkInAllowed(resolved: SharingPolicy, ov?: UserOverride | null): boolean {
+  if (resolved.checkIn !== true) return false;
+  return ov?.location !== 'hidden' || ov.checkIn === true;
 }
 
 /** Remove unset fields; null when nothing is overridden (the friend follows the crew). */
 export function cleanOverride(ov: UserOverride): UserOverride | null {
   const out: Record<string, unknown> = {};
-  for (const k of OVERRIDE_KEYS) if (ov[k] !== undefined) out[k] = ov[k];
+  for (const k of OVERRIDE_KEYS) if (ov[k] !== undefined && !(k === 'statsVis' && !Object.keys(ov.statsVis ?? {}).length)) out[k] = ov[k];
   return Object.keys(out).length ? (out as UserOverride) : null;
 }
 
@@ -211,6 +232,9 @@ export function mergePresence<P extends Presence>(a: P | null, b: P | null): P |
   if (!a) return b;
   if (!b) return a;
   const [best, other] = RANK[a.prec] !== RANK[b.prec] ? (RANK[a.prec] > RANK[b.prec] ? [a, b] : [b, a]) : a.t >= b.t ? [a, b] : [b, a];
+  // Battery is a reading of its own: the newest one wins, never an older one riding on the better position.
+  const [newer, older] = a.t >= b.t ? [a, b] : [b, a];
+  const batSrc = newer.bat !== null ? newer : older;
   return {
     ...best,
     // The precise channel carries no protocol stamp: keep the other crew's, or capability checks fail for good.
@@ -218,8 +242,8 @@ export function mergePresence<P extends Presence>(a: P | null, b: P | null): P |
     spd: best.spd ?? other.spd,
     hdg: best.hdg ?? other.hdg,
     act: best.act !== 'unknown' ? best.act : other.act,
-    bat: best.bat ?? other.bat,
-    chg: best.bat !== null ? best.chg : other.chg,
+    bat: batSrc.bat,
+    chg: batSrc.chg,
     eta: best.eta ?? other.eta,
   };
 }

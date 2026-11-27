@@ -1,14 +1,14 @@
 import { useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { CAR_COLORS, carColorOf, CARS, RIDES_WITH_ACCENT, colorOf, FINISH_ITEMS, finishOf, withCarAccent, withCarColor, withCarFinish, withColor, withFinish, type AvatarConfig, type AvatarPartKey, type CarConfig, type FinishItem } from '@crewmap/shared/avatar';
+import { CAR_COLORS, carColorOf, CARS, CLEAR_LENS, RIDES_NATURAL, RIDES_WITH_ACCENT, colorOf, FINISH_ITEMS, finishOf, trimOf, withCarAccent, withCarColor, withCarFinish, withCarTint, withColor, withFinish, withLens, withTrim, type AvatarConfig, type AvatarPartKey, type CarConfig, type FinishItem } from '@crewmap/shared/avatar';
 import { t, type I18nKey } from '@crewmap/shared/i18n';
 import { Bouncy, Chip } from '../kit';
 import { Icon } from '../kitIcons';
 import { radius, space, type, useTheme } from '../theme';
 import { ColorField } from './ColorPicker';
 import { FinishPicker } from './FinishPicker';
-import { groupOf, isLight, PART_GROUPS, partOptions, RIDE_ICON, withPart } from './avatarParts';
+import { groupOf, hasLens, hasTrim, isLight, PART_GROUPS, partOptions, RIDE_ICON, withPart } from './avatarParts';
 
 /**
  * Avatar and ride pickers shared by the avatar editor and onboarding. testIDs: `<prefix>-tab-<tab>`,
@@ -47,8 +47,15 @@ export const PART_TABS: readonly AvatarPartKey[] = PART_GROUPS.map((g) => g.tab)
 const isFinishItem = (k: string): k is FinishItem => (FINISH_ITEMS as readonly string[]).includes(k);
 
 /** Styles of the tab's part, then the colours that paint it. */
+function Caption({ k }: { k: I18nKey }) {
+  const th = useTheme();
+  return <Text style={[type.caption, { color: th.textSoft }]}>{t(k)}</Text>;
+}
+
 export function PartOptions({ value, tab, onChange, testPrefix }: { value: AvatarConfig; tab: AvatarPartKey; onChange: (cfg: AvatarConfig) => void; testPrefix: string }) {
   const g = groupOf(tab);
+  const trim = g.trim && hasTrim(value, g.trim) ? g.trim : null;
+  const lens = g.lens && hasLens(value) ? (value.lens ?? '') : null;
   return (
     <Animated.View key={tab} entering={FadeIn.duration(180)} style={{ gap: space(4) }}>
       <View style={styles.wrap}>
@@ -57,11 +64,40 @@ export function PartOptions({ value, tab, onChange, testPrefix }: { value: Avata
         ))}
       </View>
       {g.color && <ColorField testPrefix={testPrefix} presets={partOptions(g.color)} value={colorOf(value, g.color)} onChange={(c) => onChange(withColor(value, g.color!, c))} />}
-      {g.color2 && <ColorField testPrefix={`${testPrefix}-2`} presets={partOptions(g.color2)} value={colorOf(value, g.color2)} onChange={(c) => onChange(withColor(value, g.color2!, c))} />}
+      {g.color2 && (
+        <>
+          <Caption k={`avatar.${g.color2}` as I18nKey} />
+          <ColorField testPrefix={`${testPrefix}-2`} presets={partOptions(g.color2)} value={colorOf(value, g.color2)} onChange={(c) => onChange(withColor(value, g.color2!, c))} />
+        </>
+      )}
+      {trim && (
+        <>
+          <Caption k="avatar.trim" />
+          <ColorField testPrefix={`${testPrefix}-trim`} presets={TRIM_PRESETS} value={trimOf(value, trim) ?? ''} specials={[{ kind: 'natural', on: !trimOf(value, trim), onPress: () => onChange(withTrim(value, trim, null)) }]} onChange={(c) => onChange(withTrim(value, trim, c))} />
+        </>
+      )}
+      {lens !== null && (
+        <>
+          <Caption k="avatar.lens" />
+          <ColorField
+            testPrefix={`${testPrefix}-lens`}
+            presets={LENS_PRESETS}
+            value={lens === CLEAR_LENS ? '' : lens}
+            specials={[
+              { kind: 'natural', on: lens === '', onPress: () => onChange(withLens(value, null)) },
+              { kind: 'clear', on: lens === CLEAR_LENS, onPress: () => onChange(withLens(value, CLEAR_LENS)) },
+            ]}
+            onChange={(c) => onChange(withLens(value, c))}
+          />
+        </>
+      )}
       {isFinishItem(g.tab) && <FinishPicker testPrefix={testPrefix} value={finishOf(value, g.tab)} onChange={(f) => onChange(withFinish(value, g.tab as FinishItem, f))} />}
     </Animated.View>
   );
 }
+
+const TRIM_PRESETS = ['#F5F5F5', '#1F2937', '#FF6B6B', '#FFC845', '#5B6CFF', '#2EC4B6'] as const;
+const LENS_PRESETS = ['#111827', '#6B4F3A', '#1E88E5', '#E53935', '#43A047', '#FF8FB1', '#FDD835', '#8E44AD'] as const;
 
 const TILE = 84;
 const TILE_GAP = space(2.5);
@@ -105,14 +141,18 @@ export function RidePicker({ car, onChange, layout, testPrefix }: { car: CarConf
       ) : (
         <View style={[styles.wrap, { gap: TILE_GAP }]}>{tiles}</View>
       )}
-      <ColorField testPrefix={`${testPrefix}-paint`} presets={CAR_COLORS} value={carColorOf(car)} onChange={(c) => onChange(withCarColor(car, c))} />
+      {RIDES_NATURAL.includes(car.model) ? (
+        <ColorField testPrefix={`${testPrefix}-paint`} presets={CAR_COLORS} value={car.tint ? carColorOf(car) : ''} specials={[{ kind: 'natural', on: !car.tint, onPress: () => onChange(withCarTint(car, false)) }]} onChange={(c) => onChange(withCarTint(withCarColor(car, c), true))} />
+      ) : (
+        <ColorField testPrefix={`${testPrefix}-paint`} presets={CAR_COLORS} value={carColorOf(car)} onChange={(c) => onChange(withCarColor(car, c))} />
+      )}
       {layout === 'wrap' && (
         <>
           <FinishPicker testPrefix={`${testPrefix}-paint`} value={car.finish ?? 'none'} onChange={(f) => onChange(withCarFinish(car, f))} />
           {RIDES_WITH_ACCENT.includes(car.model) && (
             <>
               <Text style={[type.caption, { color: th.textSoft }]}>{t('avatar.accent')}</Text>
-              <ColorField testPrefix={`${testPrefix}-accent`} presets={CAR_COLORS} value={car.accent ?? ''} onChange={(c) => onChange(withCarAccent(car, c))} />
+              <ColorField testPrefix={`${testPrefix}-accent`} presets={CAR_COLORS} value={car.accent ?? ''} specials={[{ kind: 'natural', on: !car.accent, onPress: () => onChange(withCarAccent(car, null)) }]} onChange={(c) => onChange(withCarAccent(car, c))} />
             </>
           )}
         </>

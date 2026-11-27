@@ -9,8 +9,61 @@ export const EMOTE_PRESETS = [
   'honkHonk',
   'onMyWay',
   'missYou',
+  // Friendly pings (D58). On the wire they travel as their legacy fallback + `p2`, so older builds still show something.
+  'thinkingOfYou',
+  'imHere',
+  'needRide',
+  'welcomeHome',
+  'chargeUp',
+  'driveSafe',
+  'thanks',
 ] as const;
 export type EmotePreset = (typeof EMOTE_PRESETS)[number];
+
+/** The presets every build since F3 understands. */
+export const LEGACY_PRESETS = ['getMeFood', 'areWeThereYet', 'whereAreYou', 'hurryUp', 'callMe', 'honkHonk', 'onMyWay', 'missYou'] as const;
+export type LegacyPreset = (typeof LEGACY_PRESETS)[number];
+export const PING_PRESETS: readonly EmotePreset[] = EMOTE_PRESETS.filter((p) => !(LEGACY_PRESETS as readonly string[]).includes(p));
+
+/** What an older build shows for a newer preset (it drops unknown presets). */
+export const PRESET_FALLBACK: Record<EmotePreset, LegacyPreset> = {
+  getMeFood: 'getMeFood',
+  areWeThereYet: 'areWeThereYet',
+  whereAreYou: 'whereAreYou',
+  hurryUp: 'hurryUp',
+  callMe: 'callMe',
+  honkHonk: 'honkHonk',
+  onMyWay: 'onMyWay',
+  missYou: 'missYou',
+  thinkingOfYou: 'missYou',
+  imHere: 'onMyWay',
+  needRide: 'callMe',
+  welcomeHome: 'missYou',
+  chargeUp: 'callMe',
+  driveSafe: 'missYou',
+  thanks: 'missYou',
+};
+
+/** Calm presets that ask nothing of a driver: the only quick set offered while the friend drives. */
+export const DRIVING_SAFE: readonly EmotePreset[] = ['driveSafe', 'thinkingOfYou', 'missYou', 'onMyWay', 'thanks'];
+
+export type WireEmote = EmoteMessage & { p2?: string };
+
+/** Wire form: newer presets go out as their legacy fallback with the real one in `p2` (older readers ignore it). */
+export function toWire(m: EmoteMessage): WireEmote {
+  if (m.preset === 'custom' || PRESET_FALLBACK[m.preset] === m.preset) return m;
+  return { ...m, preset: PRESET_FALLBACK[m.preset], p2: m.preset };
+}
+
+/** Reads a wire emote: a known `p2` wins; an unknown one (a newer build's preset) degrades to the fallback. */
+export function fromWire(raw: unknown): EmoteMessage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { p2, ...rest } = raw as Record<string, unknown>;
+  if (typeof rest.preset !== 'string') return null;
+  const msg = rest as unknown as EmoteMessage;
+  if (typeof p2 === 'string' && (EMOTE_PRESETS as readonly string[]).includes(p2)) msg.preset = p2 as EmotePreset;
+  return msg;
+}
 
 export const EMOTE_LIMITS = {
   /** Custom clips: ≤ 5 s and ≤ 60 KB (AAC mono ~64 kbps ≈ 40 KB for 5 s). */
@@ -119,6 +172,13 @@ export const EMOTE_EMOJI: Record<EmotePreset | 'custom', string> = {
   honkHonk: '📯',
   onMyWay: '🚗',
   missYou: '💜',
+  thinkingOfYou: '💭',
+  imHere: '🏁',
+  needRide: '🚕',
+  welcomeHome: '🏠',
+  chargeUp: '🔋',
+  driveSafe: '🛡️',
+  thanks: '🙏',
   custom: '🎙️',
 };
 

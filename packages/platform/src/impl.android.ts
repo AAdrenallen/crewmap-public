@@ -14,6 +14,7 @@ import { androidExternalNav } from './externalNav/android';
 import { androidNavOverlay } from './navOverlay/android';
 import { androidExternalNavStatus } from './externalNavStatus/android';
 import { androidMedia } from './media/android';
+import { androidPhotos } from './photos/android';
 import { WebRtcLinks } from './rtc/android';
 
 export const platform: Platform = {
@@ -32,6 +33,7 @@ export const platform: Platform = {
   navOverlay: androidNavOverlay,
   externalNavStatus: androidExternalNavStatus,
   media: androidMedia,
+  photos: androidPhotos,
   sodium: nativeSodium,
   createDirectLinks: (id) => new WebRtcLinks(id),
 };

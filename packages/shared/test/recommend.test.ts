@@ -63,7 +63,7 @@ describe('recommendation', () => {
       },
       'x',
     );
-    expect(r.controls).toEqual({ signals: 2, stops: 1, yields: 1, turns: 1, fastRoadM: 1500 });
+    expect(r.controls).toEqual({ signals: 2, stops: 1, yields: 1, turns: 1, fastRoadM: 1500, leftTurns: 1, noRedRightTurns: 0, minorRoadM: 0, tertiaryRoadM: 0, tollM: 0 });
   });
 
   it('treats near-equal routes as a tie and prefers the predictable one', () => {

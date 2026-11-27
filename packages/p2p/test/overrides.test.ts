@@ -154,7 +154,7 @@ describe('per-friend overrides on the wire (3 peers)', () => {
 });
 
 describe('global sharing settings migration (D52)', () => {
-  const legacy = { statsVisibility: { score: false, distance: true, topSpeed: true, events: false, trips: false, places: false, streaks: true, badges: true }, precision: { f1: 'approx' as const, f2: 'precise' as const } };
+  const legacy = { statsVisibility: { score: false, distance: true, topSpeed: true, events: false, trips: false, places: false, streaks: true, badges: true, home: false }, precision: { f1: 'approx' as const, f2: 'precise' as const } };
 
   it('old global stats visibility becomes each crew default; precise=false becomes a location override', () => {
     const v2 = migrateCrewStorage({ circleId: 'c1' }, null);

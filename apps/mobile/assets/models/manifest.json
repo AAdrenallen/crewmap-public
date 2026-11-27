@@ -61,7 +61,16 @@
       "baggy",
       "leggings",
       "overalls",
-      "pleated"
+      "pleated",
+      "kilt",
+      "capri",
+      "flares",
+      "harem",
+      "chinos",
+      "bikeshorts",
+      "boardshorts",
+      "cutoffs",
+      "palazzo"
     ],
     "shoes": [
       "sneakers",
@@ -145,7 +154,7 @@
     ]
   },
   "avatarTris": {
-    "worstCaseTris": 13408
+    "worstCaseTris": 13864
   },
   "cars": {
     "bathtub": 2144,
@@ -190,8 +199,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "hatchback": {
@@ -219,8 +228,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "suv": {
@@ -248,8 +257,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "sports": {
@@ -277,8 +286,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "van": {
@@ -306,8 +315,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "pickup": {
@@ -335,8 +344,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "convertible": {
@@ -364,8 +373,8 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "motorcycle": {
@@ -394,7 +403,7 @@
           -0.12
         ],
         "lean": 0.4,
-        "yaw": 0
+        "yaw": 0.0
       }
     },
     "hotdog": {
@@ -422,12 +431,12 @@
           -2.8,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "skateboard": {
-      "scale": 1,
+      "scale": 1.0,
       "seat": [
         0,
         0,
@@ -436,11 +445,11 @@
       "rider": 0.8,
       "pose": {
         "legL": [
-          0,
+          0.0,
           -0.24
         ],
         "legR": [
-          0,
+          0.0,
           0.24
         ],
         "armL": [
@@ -451,21 +460,21 @@
           0.1,
           1.15
         ],
-        "lean": 0,
+        "lean": 0.0,
         "yaw": 1.5708
       }
     },
     "scooter": {
-      "scale": 1,
+      "scale": 1.0,
       "seat": [
         0,
-        0,
+        0.0,
         0.325
       ],
       "rider": 0.75,
       "pose": {
         "legL": [
-          0,
+          0.0,
           -0.05
         ],
         "legR": [
@@ -481,11 +490,11 @@
           -0.12
         ],
         "lean": 0.18,
-        "yaw": 0
+        "yaw": 0.0
       }
     },
     "rocket": {
-      "scale": 1,
+      "scale": 1.0,
       "seat": [
         0,
         0.06,
@@ -510,11 +519,11 @@
           -0.18
         ],
         "lean": 0.45,
-        "yaw": 0
+        "yaw": 0.0
       }
     },
     "cart": {
-      "scale": 1,
+      "scale": 1.0,
       "seat": [
         0,
         0.06,
@@ -538,12 +547,12 @@
           -2.85,
           0.35
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     },
     "bathtub": {
-      "scale": 1,
+      "scale": 1.0,
       "seat": [
         0,
         0.06,
@@ -568,11 +577,11 @@
           1.15
         ],
         "lean": -0.22,
-        "yaw": 0
+        "yaw": 0.0
       }
     },
     "carpet": {
-      "scale": 1,
+      "scale": 1.0,
       "seat": [
         0,
         0.06,
@@ -596,8 +605,8 @@
           -2.7,
           0.3
         ],
-        "lean": 0,
-        "yaw": 0
+        "lean": 0.0,
+        "yaw": 0.0
       }
     }
   }

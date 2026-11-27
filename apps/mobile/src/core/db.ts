@@ -2,7 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import type { ChatPersistence, ChatStatus, CircleOp, StoredChat } from '@crewmap/p2p';
 import { simplifyToCount, type Trip } from '@crewmap/shared/driving';
 import { decodePolyline, encodePolyline, type LatLng } from '@crewmap/shared/geo';
-import type { RouteTrace } from '@crewmap/shared/navigation';
+import type { RouteTrace, TimedTrace } from '@crewmap/shared/navigation';
 import type { Place } from '@crewmap/shared/places';
 import type { TripSummary, Visit, WalkSummary } from '@crewmap/shared/stats';
 
@@ -38,6 +38,14 @@ const MIGRATIONS: string[] = [
    CREATE INDEX IF NOT EXISTS chat_thread ON chat(thread, t);`,
   // Simplified polyline (~40 points, precision 5) so the drives list never loads full point arrays.
   `ALTER TABLE trips ADD COLUMN poly TEXT;`,
+  // Trip memories (D68): crewmate fixes received while I drive and emotes exchanged meanwhile (raw, retention-purged),
+  // and the memories themselves (self-contained JSON; tracks stripped after retention unless kept).
+  `CREATE TABLE IF NOT EXISTS mem_tracks (who TEXT NOT NULL, t INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, spd REAL, PRIMARY KEY (who, t));
+   CREATE INDEX IF NOT EXISTS mem_tracks_t ON mem_tracks(t);
+   CREATE TABLE IF NOT EXISTS mem_events (t INTEGER NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL, preset TEXT NOT NULL);
+   CREATE INDEX IF NOT EXISTS mem_events_t ON mem_events(t);
+   CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY NOT NULL, start INTEGER NOT NULL, end_t INTEGER NOT NULL, json TEXT NOT NULL);
+   CREATE INDEX IF NOT EXISTS memories_start ON memories(start);`,
 ];
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -274,6 +282,8 @@ export async function purgeOlderThan(days: number, now: number): Promise<{ histo
   await the().runAsync('DELETE FROM visits WHERE t < ?', cutoff);
   await the().runAsync('DELETE FROM hazards WHERE expires_at < ?', now);
   await the().runAsync('DELETE FROM chat WHERE t < ?', cutoff);
+  await the().runAsync('DELETE FROM mem_tracks WHERE t < ?', cutoff);
+  await the().runAsync('DELETE FROM mem_events WHERE t < ?', cutoff);
   return { history: h.changes, trips: t.changes };
 }
 
@@ -287,9 +297,18 @@ export async function deleteRouteTrace(tripId: string): Promise<void> {
   await the().runAsync('DELETE FROM route_traces WHERE trip_id = ?', tripId);
 }
 
-export async function routeTraces(): Promise<RouteTrace[]> {
-  const rows = await the().getAllAsync<{ trip_id: string; ended_at: number; distance_m: number; poly: string }>('SELECT * FROM route_traces');
-  return rows.map((r) => ({ tripId: r.trip_id, endedAt: r.ended_at, distanceM: r.distance_m, line: decodePolyline(r.poly, 5) }));
+export async function routeTraces(): Promise<TimedTrace[]> {
+  // Start time from the trip row (habit drives for ETA truth, D60); a trace whose trip row is gone has none.
+  const rows = await the().getAllAsync<{ trip_id: string; ended_at: number; distance_m: number; poly: string; started_at: number | null }>(
+    'SELECT rt.trip_id, rt.ended_at, rt.distance_m, rt.poly, t.started_at FROM route_traces rt LEFT JOIN trips t ON t.id = rt.trip_id',
+  );
+  return rows.map((r) => ({
+    tripId: r.trip_id,
+    endedAt: r.ended_at,
+    distanceM: r.distance_m,
+    line: decodePolyline(r.poly, 5),
+    ...(typeof r.started_at === 'number' ? { startedAt: r.started_at } : {}),
+  }));
 }
 
 // --- places -----------------------------------------------------------------------------------------------------------
@@ -373,7 +392,7 @@ export async function benchRows(kind: string, since: number): Promise<{ t: numbe
 
 /** Account + data deletion (X2): wipe every table. Keys are removed separately from secure storage. */
 export async function wipeAll(): Promise<void> {
-  const tables = ['kv', 'circle_ops', 'ydoc', 'trips', 'walks', 'visits', 'history', 'places', 'outbox', 'hazards', 'geocache', 'bench', 'route_traces', 'chat'];
+  const tables = ['kv', 'circle_ops', 'ydoc', 'trips', 'walks', 'visits', 'history', 'places', 'outbox', 'hazards', 'geocache', 'bench', 'route_traces', 'chat', 'mem_tracks', 'mem_events', 'memories'];
   await tx(async () => {
     for (const t of tables) await the().execAsync(`DELETE FROM ${t};`);
   });

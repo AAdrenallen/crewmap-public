@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { TipBanner } from '../shell/TipBanner';
 import { QUIP_LIMITS, type SavedQuip } from '@crewmap/p2p';
+import { EMOTE_LIMITS } from '@crewmap/shared/emotes';
 import { t } from '@crewmap/shared/i18n';
 import { platform } from '@crewmap/platform';
 import { engine } from '../../core/engine';
@@ -32,12 +33,19 @@ export function QuipSection({ friendId, friendName, disabled }: { friendId: stri
   const unsaved = driving ? [] : received.filter((r) => !savedIds.has(r.id));
   const canCreate = !!(cap.trim() || emoji.trim() || audio || image);
 
+  const [leftMs, setLeftMs] = useState<number>(EMOTE_LIMITS.maxClipMs);
   const holdRecord = async () => {
     setRecording(true);
+    setLeftMs(EMOTE_LIMITS.maxClipMs);
+    let tick: ReturnType<typeof setInterval> | null = null;
     try {
-      const c = await engine.emotes.recordClip();
+      const c = await engine.emotes.recordClip(() => {
+        const t0 = Date.now();
+        tick = setInterval(() => setLeftMs(Math.max(0, EMOTE_LIMITS.maxClipMs - (Date.now() - t0))), 100);
+      });
       if (c) setAudio({ base64: c.clip, ms: c.clipMs });
     } finally {
+      if (tick) clearInterval(tick);
       setRecording(false);
     }
   };
@@ -134,7 +142,7 @@ export function QuipSection({ friendId, friendName, disabled }: { friendId: stri
               style={[styles.rec, { backgroundColor: recording ? palette.danger : th.card, borderColor: recording ? palette.danger : th.border }]}
             >
               <Text style={[type.body, font('bold'), { color: recording ? '#FFFFFF' : th.text }]}>
-                {audio ? `\u{1F399}️ ${(audio.ms / 1000).toFixed(1)} s` : t('quip.noVoice')}
+                {recording ? `${(leftMs / 1000).toFixed(1)} s` : audio ? `\u{1F399}️ ${(audio.ms / 1000).toFixed(1)} s` : t('quip.noVoice')}
               </Text>
             </Pressable>
           </View>

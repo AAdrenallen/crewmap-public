@@ -32,6 +32,21 @@ export interface DriveAlongSession {
   arrived: Record<string, number>;
   /** A destination change from the host that I have not accepted yet. */
   pendingDest: { dest: GroupDest; rev: number } | null;
+  /** Convoy mode (D65): who leads, and a revision so a stale lead change is ignored. Absent = never a convoy. */
+  convoy?: ConvoyInfo | null;
+}
+
+export interface ConvoyInfo {
+  on: boolean;
+  leader: string;
+  rev: number;
+}
+
+export function parseConvoy(raw: unknown): ConvoyInfo | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.on !== 'boolean' || typeof o.leader !== 'string' || o.leader.length === 0 || o.leader.length > 128 || typeof o.rev !== 'number' || !Number.isFinite(o.rev)) return null;
+  return { on: o.on, leader: o.leader, rev: o.rev };
 }
 
 /**
@@ -39,12 +54,14 @@ export interface DriveAlongSession {
  * older readers: a build without the `groupDrive` capability reads a group invite as a plain drive-along invite.
  */
 export type DriveAlongOp =
-  | { v: 1; op: 'invite'; sid: string; t: number; crew: string | null; members: { id: string; name: string }[]; ownerName: string; dest?: GroupDest; rev?: number }
+  | { v: 1; op: 'invite'; sid: string; t: number; crew: string | null; members: { id: string; name: string }[]; ownerName: string; dest?: GroupDest; rev?: number; convoy?: ConvoyInfo }
   | { v: 1; op: 'accept' | 'decline' | 'leave' | 'stop'; sid: string; t: number }
   /** Group drive: the host moved the destination. */
   | { v: 1; op: 'dest'; sid: string; t: number; dest: GroupDest; rev: number }
   /** Group drive: the sender reached the destination of revision `rev`. */
-  | { v: 1; op: 'arrive'; sid: string; t: number; rev: number };
+  | { v: 1; op: 'arrive'; sid: string; t: number; rev: number }
+  /** Convoy (D65): the host turns convoy mode on / off or picks the leader; the leader may hand the lead over. */
+  | ({ v: 1; op: 'convoy'; sid: string; t: number } & ConvoyInfo);
 
 export function parseDest(raw: unknown): GroupDest | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -54,10 +71,10 @@ export function parseDest(raw: unknown): GroupDest | null {
   return { name: typeof o.name === 'string' ? o.name.slice(0, 80) : '', lat: o.lat, lng: o.lng };
 }
 
-export function newSession(sid: string, me: { id: string; name: string }, invitees: { id: string; name: string }[], crew: string | null, now: number, dest: GroupDest | null = null): DriveAlongSession {
+export function newSession(sid: string, me: { id: string; name: string }, invitees: { id: string; name: string }[], crew: string | null, now: number, dest: GroupDest | null = null, convoy = false): DriveAlongSession {
   const members: DriveAlongSession['members'] = { [me.id]: { state: 'joined', at: now, name: me.name } };
   for (const i of invitees) if (i.id !== me.id) members[i.id] = { state: 'invited', at: now, name: i.name };
-  return { sid, owner: me.id, crew, startedAt: now, members, heard: {}, shareRoute: false, dest, destRev: 0, arrived: {}, pendingDest: null };
+  return { sid, owner: me.id, crew, startedAt: now, members, heard: {}, shareRoute: false, dest, destRev: 0, arrived: {}, pendingDest: null, convoy: convoy ? { on: true, leader: me.id, rev: 0 } : null };
 }
 
 export function inviteOp(s: DriveAlongSession, now: number): DriveAlongOp {
@@ -70,6 +87,7 @@ export function inviteOp(s: DriveAlongSession, now: number): DriveAlongOp {
     members: Object.entries(s.members).filter(([id]) => id !== s.owner).map(([id, m]) => ({ id, name: m.name })),
     ownerName: s.members[s.owner]?.name ?? '',
     ...(s.dest ? { dest: s.dest, rev: s.destRev } : {}),
+    ...(s.convoy ? { convoy: s.convoy } : {}),
   };
 }
 
@@ -81,7 +99,12 @@ export function parseOp(raw: unknown): DriveAlongOp | null {
     if (!Array.isArray(o.members) || o.members.length > 50 || typeof o.ownerName !== 'string') return null;
     const members = (o.members as unknown[]).filter((m): m is { id: string; name: string } => !!m && typeof (m as { id: unknown }).id === 'string' && typeof (m as { name: unknown }).name === 'string');
     const dest = parseDest(o.dest);
-    return { v: 1, op: 'invite', sid: o.sid, t: o.t, crew: typeof o.crew === 'string' ? o.crew : null, members, ownerName: o.ownerName.slice(0, 60), ...(dest ? { dest, rev: typeof o.rev === 'number' ? o.rev : 0 } : {}) };
+    const convoy = parseConvoy(o.convoy);
+    return { v: 1, op: 'invite', sid: o.sid, t: o.t, crew: typeof o.crew === 'string' ? o.crew : null, members, ownerName: o.ownerName.slice(0, 60), ...(dest ? { dest, rev: typeof o.rev === 'number' ? o.rev : 0 } : {}), ...(convoy ? { convoy } : {}) };
+  }
+  if (o.op === 'convoy') {
+    const c = parseConvoy(o);
+    return c ? { v: 1, op: 'convoy', sid: o.sid, t: o.t, ...c } : null;
   }
   if (o.op === 'dest') {
     const dest = parseDest(o.dest);
@@ -96,7 +119,39 @@ export function parseOp(raw: unknown): DriveAlongOp | null {
 export function sessionFromInvite(op: Extract<DriveAlongOp, { op: 'invite' }>, from: string, me: string, now: number): DriveAlongSession {
   const members: DriveAlongSession['members'] = { [from]: { state: 'joined', at: now, name: op.ownerName } };
   for (const m of op.members) members[m.id] = { state: m.id === me ? 'joined' : 'invited', at: now, name: m.name };
-  return { sid: op.sid, owner: from, crew: op.crew, startedAt: now, members, heard: {}, shareRoute: false, dest: op.dest ?? null, destRev: op.rev ?? 0, arrived: {}, pendingDest: null };
+  return { sid: op.sid, owner: from, crew: op.crew, startedAt: now, members, heard: {}, shareRoute: false, dest: op.dest ?? null, destRev: op.rev ?? 0, arrived: {}, pendingDest: null, convoy: op.convoy ?? null };
+}
+
+/** The convoy leader right now: null when convoy mode is off. */
+export function convoyLeader(s: DriveAlongSession): string | null {
+  return s.convoy?.on ? s.convoy.leader : null;
+}
+
+/**
+ * Convoy op (D65). The host may turn convoy mode on / off and pick any joined member as leader; the current leader may
+ * only hand the lead to another joined member. Older revisions are ignored, so a late lead change never undoes a newer one.
+ */
+export function applyConvoy(s: DriveAlongSession, from: string, c: ConvoyInfo): DriveAlongSession {
+  const cur = s.convoy ?? null;
+  if (cur && c.rev <= cur.rev) return s;
+  const isOwner = from === s.owner;
+  const isLeader = !!cur?.on && from === cur.leader;
+  if (!isOwner && !(isLeader && c.on)) return s;
+  if (c.on && s.members[c.leader]?.state !== 'joined') return s;
+  return { ...s, convoy: { on: c.on, leader: c.leader, rev: c.rev } };
+}
+
+/** Host / leader: the op that turns convoy mode on (with `leader`) or off. */
+export function convoyOp(s: DriveAlongSession, on: boolean, leader: string, now: number): Extract<DriveAlongOp, { op: 'convoy' }> {
+  return { v: 1, op: 'convoy', sid: s.sid, t: now, on, leader, rev: (s.convoy?.rev ?? -1) + 1 };
+}
+
+/** A member left: a leaving leader hands the lead to the (possibly new) host, so every peer agrees without a message. */
+function convoyAfterLeave(s: DriveAlongSession, leaving: string): DriveAlongSession {
+  const c = s.convoy;
+  if (!c?.on || c.leader !== leaving) return s;
+  const next = s.owner !== leaving ? s.owner : successor(s, leaving);
+  return next ? { ...s, convoy: { ...c, leader: next } } : { ...s, convoy: { ...c, on: false } };
 }
 
 /** Who takes over when the host leaves: the joined member with the smallest id, so every peer agrees without a message. */
@@ -136,11 +191,12 @@ export function applyOp(s: DriveAlongSession, from: string, op: DriveAlongOp, no
     return { ...s, pendingDest: { dest: op.dest, rev: op.rev } };
   }
   if (op.op === 'arrive') return cur?.state === 'joined' && op.rev === s.destRev && s.dest ? markArrived(s, from, op.t) : s;
+  if (op.op === 'convoy') return applyConvoy(s, from, op);
   if (op.op === 'leave' && from === s.owner) {
     // The host left: hand over rather than end the drive for everyone.
     const next = successor(s, from);
     if (!next) return null;
-    return { ...s, owner: next, members: { ...s.members, [from]: { ...s.members[from]!, state: 'left', at: now } } };
+    return convoyAfterLeave({ ...s, owner: next, members: { ...s.members, [from]: { ...s.members[from]!, state: 'left', at: now } } }, from);
   }
   if (op.op === 'invite') {
     // Organiser re-sent (more people added): merge newcomers as invited.
@@ -149,11 +205,13 @@ export function applyOp(s: DriveAlongSession, from: string, op: DriveAlongOp, no
     for (const m of op.members) if (!members[m.id]) members[m.id] = { state: 'invited', at: now, name: m.name };
     const rev = op.rev ?? 0;
     const late = !!op.dest && rev > s.destRev && !(s.pendingDest && s.pendingDest.rev >= rev);
-    return { ...s, members, ...(late ? { pendingDest: { dest: op.dest!, rev } } : {}) };
+    const merged = { ...s, members, ...(late ? { pendingDest: { dest: op.dest!, rev } } : {}) };
+    return op.convoy ? applyConvoy(merged, from, op.convoy) : merged;
   }
   if (!cur) return s;
   const state: MemberState = op.op === 'accept' ? 'joined' : op.op === 'decline' ? 'declined' : 'left';
-  return { ...s, members: { ...s.members, [from]: { ...cur, state, at: now } } };
+  const next = { ...s, members: { ...s.members, [from]: { ...cur, state, at: now } } };
+  return state === 'joined' ? next : convoyAfterLeave(next, from);
 }
 
 /** Members (other than me) who receive my live presence. */

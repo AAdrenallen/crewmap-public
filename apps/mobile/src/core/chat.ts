@@ -143,16 +143,16 @@ export class Chat {
     // Ride mutes ('Mute {name}' / 'Mute all', until the ride ends) silence chat notices too.
     const muted = isMuted(m.from) || rideMuted(m.from);
     const foreground = AppState.currentState === 'active';
-    // Foreground: the chat bubble is the notice; background: one updating notification per conversation.
+    // Foreground: the chat bubble plus a quiet banner (unless that chat is open); background: one updating notification per conversation.
     if (foreground) blipFor({ thread, from: m.from, name, kind: crewName ? 'chatCrew' : 'chat1', viewing, muted });
-    else if (!muted && notifyMode('chat', ctx, next) !== 'skip') {
+    if (!(foreground && viewing) && !muted && notifyMode('chat', ctx, next) !== 'skip') {
       const n = chatNotif(
         { title, text: m.text, unread: useApp.getState().chatUnread[thread] ?? 1, hidePreview: s.settings.hideChatPreviews },
         { count: (k) => t('notif.newMsgs', { n: String(k) }), hidden: t('notif.newMsg') },
       );
       void notify(n.title, n.body, {
         channel: 'circle',
-        silent: notifyMode('chat', ctx, next) === 'silent',
+        silent: foreground || notifyMode('chat', ctx, next) === 'silent',
         identifier: notifIdFor('chat', thread),
         data: { type: 'chat', chatId: thread, friendId: m.from },
       }).catch(() => undefined);

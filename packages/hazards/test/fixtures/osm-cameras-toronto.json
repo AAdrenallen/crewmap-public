@@ -1,0 +1,125 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-11-27T03:44:04Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 3708696449,
+  "lat": 43.6355714,
+  "lon": -79.4676466,
+  "tags": {
+    "highway": "speed_camera",
+    "note": "red light camera"
+  }
+},
+{
+  "type": "node",
+  "id": 9537833178,
+  "lat": 43.6360309,
+  "lon": -79.3977389,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 9905965206,
+  "lat": 43.7294418,
+  "lon": -79.3668718,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 10174227463,
+  "lat": 43.6934849,
+  "lon": -79.3314638,
+  "tags": {
+    "direction": "235",
+    "highway": "speed_camera",
+    "maxspeed": "50"
+  }
+},
+{
+  "type": "node",
+  "id": 10174227464,
+  "lat": 43.6975143,
+  "lon": -79.3310786,
+  "tags": {
+    "direction": "95",
+    "highway": "speed_camera",
+    "maxspeed": "45"
+  }
+},
+{
+  "type": "node",
+  "id": 10649469359,
+  "lat": 43.7116731,
+  "lon": -79.3352739,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 10847486304,
+  "lat": 43.6909679,
+  "lon": -79.3268411,
+  "tags": {
+    "highway": "speed_camera",
+    "maxspeed": "50"
+  }
+},
+{
+  "type": "node",
+  "id": 11094223612,
+  "lat": 43.6349438,
+  "lon": -79.3976224,
+  "tags": {
+    "highway": "speed_camera"
+  }
+},
+{
+  "type": "node",
+  "id": 13042469402,
+  "lat": 43.6636572,
+  "lon": -79.3082822,
+  "tags": {
+    "direction": "ENE",
+    "highway": "speed_camera",
+    "maxspeed": "50",
+    "name": "Lake Shore Blvd E. Eastbound East of Winners Circle",
+    "ref": "120606-0007",
+    "website": "https://www.toronto.ca/services-payments/streets-parking-transportation/road-safety/vision-zero/safety-initiatives/automated-speed-enforcement/speed-cameras/#location=Lake%20Shore%20Blvd%20E.%20East%20of%20Winners%20Circle19%20-%20Beaches-East%20York&lat="
+  }
+},
+{
+  "type": "relation",
+  "id": 20170698,
+  "members": [
+    {
+      "type": "node",
+      "ref": 13523178812,
+      "role": ""
+    },
+    {
+      "type": "node",
+      "ref": 25768774,
+      "role": ""
+    }
+  ],
+  "tags": {
+    "enforcement": "red_light_camera",
+    "name": "Red Light Camera",
+    "type": "enforcement"
+  }
+}
+
+  ]
+}

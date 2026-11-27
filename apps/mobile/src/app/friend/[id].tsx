@@ -36,6 +36,7 @@ import { AskCard } from '../../ui/drive/AskCards';
 import { ShareUserRow } from '../../ui/share/ShareUserRow';
 import { useFriendContext } from '../../ui/drive/DriveHud';
 import { DRIVE_UX } from '../../ui/drive/driveUx';
+import { CheckInAlertBanner } from '../../ui/safety/CheckInAlertBanner';
 import { font, palette, radius, type, useTheme } from '../../ui/theme';
 
 function Action({
@@ -212,6 +213,7 @@ export default function FriendSheet() {
       onTouchStart={compact ? () => setTouch((n) => n + 1) : undefined}
     >
       <ScrollView nestedScrollEnabled contentContainerStyle={{ padding: 20, paddingTop: 28, gap: 16 }}>
+        <CheckInAlertBanner friendId={id} name={f.profile.name} />
         <View style={styles.head}>
           <View>
             <View style={[styles.avatar, { backgroundColor: th.cardAlt }]}>
@@ -315,7 +317,7 @@ export default function FriendSheet() {
               router.push(inDriveAlong ? '/drive-along' : { pathname: '/search', params: { with: id } });
             }}
           />
-          {!compact && (
+          {!compact && !canLocate && (
             <Action
               testID="friend-ask-location"
               icon="locate"
@@ -451,9 +453,7 @@ export default function FriendSheet() {
               />
             </Card>
 
-            <Card style={{ padding: 0 }}>
-              <ShareUserRow friendId={id} name={f.profile.name} />
-            </Card>
+            <ShareUserRow friendId={id} name={f.profile.name} />
           </>
         )}
       </ScrollView>

@@ -165,8 +165,9 @@ export function matchCurrent(fresh: NavRoute[], rest: LatLng[], cfg: ReevalConfi
 
 export interface FasterOffer {
   route: NavRoute;
+  /** Time saved (s, ≥ 0): expected times only. The offer itself is decided on ranking cost (hazards, closures). */
   savesS: number;
-  /** Expected remaining time (s) of the current route and of the alternative (recommend.ts scoring). */
+  /** Expected remaining time (s) of the current route and of the alternative (`expectedS`, no ranking penalties). */
   currentS: number;
   altS: number;
   createdAt: number;
@@ -199,8 +200,9 @@ export function decideFaster(
   const cands: RouteCandidate[] = [current, ...alternatives].map((route) => ({ route, source: 'base' as const, label }));
   const ranked = recommend(cands, input, cc);
   const cur = ranked.find((c) => c.route === current)!;
-  const curS = cur.expectedS!;
-  const threshold = Math.max(cfg.saveMinS, cfg.saveFrac * curS);
+  // Decide on the ranking cost (a closure / crash ahead counts), but say and show only real time.
+  const curS = cur.costS ?? cur.expectedS!;
+  const threshold = Math.max(cfg.saveMinS, cfg.saveFrac * cur.expectedS!);
   // Never offer a route with a closure on it, or one the driver just dismissed.
   const ok = ranked.filter(
     (c) =>
@@ -208,14 +210,21 @@ export function decideFaster(
       !c.route.incidents.some((x) => x.closed) &&
       !dismissed.some((d) => overlap(d.line, c.route.geometry, cc).ratio >= cfg.sameAltOverlap),
   );
-  const best = ok.sort((a, b) => a.expectedS! - b.expectedS!)[0];
-  const saves = best ? curS - best.expectedS! : 0;
+  const best = ok.sort((a, b) => (a.costS ?? a.expectedS!) - (b.costS ?? b.expectedS!))[0];
+  const saves = best ? curS - (best.costS ?? best.expectedS!) : 0;
   // `recommend` keeps the current route when the gain is inside its tie band and the current one is more predictable.
   if (!best || saves <= threshold || ranked[0]!.route === current) return { offer: null, memory: { pending: null, dismissed } };
   const held = mem.pending !== null && overlap(mem.pending.line, best.route.geometry, cc).ratio >= cfg.sameAltOverlap;
   if (!held && saves < cfg.strongFactor * threshold) return { offer: null, memory: { pending: { line: best.route.geometry, savesS: saves }, dismissed } };
   return {
-    offer: { route: best.route, savesS: Math.round(saves), currentS: Math.round(curS), altS: Math.round(best.expectedS!), createdAt: now, expiresAt: now + cfg.offerTtlMs },
+    offer: {
+      route: best.route,
+      savesS: Math.max(0, Math.round(cur.expectedS! - best.expectedS!)),
+      currentS: Math.round(cur.expectedS!),
+      altS: Math.round(best.expectedS!),
+      createdAt: now,
+      expiresAt: now + cfg.offerTtlMs,
+    },
     memory: { pending: null, dismissed },
   };
 }
@@ -228,9 +237,9 @@ export function dismiss(mem: ReevalMemory, offer: FasterOffer, now: number, cfg:
 /**
  * Directions usage per active driver per month (cost guard, D43): `checks/h × (1 + p2) × hours`, where p2 is the share
  * of checks needing the silent-via call. With 1.5 h/day of navigation, 30 days, one check every ~3.5 min and p2 = 0.5:
- * ≈ 26 checks/h → ≈ 1 750 calls, plus previews (≤ 8 calls each) and off-route reroutes.
+ * ≈ 26 checks/h → ≈ 1 750 calls, plus previews (≤ 10 calls each: DISCOVERY.callBudget, D59) and off-route reroutes.
  */
 export function monthlyDirectionsEstimate(navHoursPerDay: number, checkEveryMin: number, secondCallShare: number, previewsPerDay: number, reroutesPerDay: number, days = 30): number {
   const checks = (navHoursPerDay * 60) / checkEveryMin;
-  return Math.round(days * (checks * (1 + secondCallShare) + previewsPerDay * 8 + reroutesPerDay));
+  return Math.round(days * (checks * (1 + secondCallShare) + previewsPerDay * 10 + reroutesPerDay));
 }

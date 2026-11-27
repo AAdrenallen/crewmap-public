@@ -120,6 +120,17 @@ describe('Multiple crews + per-crew sharing (sender-side enforcement)', () => {
     expect(mergePresence(null, city)).toBe(city);
   });
 
+  it('battery follows the newest reading, not the most precise position', () => {
+    const base = { deviceId: 'f', receivedAt: 0, via: 'relay' as const };
+    const oldExact: FriendPresence = { ...here, ...base, bat: 68, chg: false, t: here.t };
+    const newCity: FriendPresence = { ...here, ...base, prec: 'c', bat: 88, chg: true, t: here.t + 60_000 };
+    for (const m of [mergePresence(oldExact, newCity)!, mergePresence(newCity, oldExact)!]) {
+      expect(m.prec).toBe('p');
+      expect(m.bat).toBe(88);
+      expect(m.chg).toBe(true);
+    }
+  });
+
   it('migrates single-circle storage to the crew list without losing the circle or its invites', () => {
     const invites = [{ inviteId: 'i1', secret: 's', expiresAt: 99, used: false }];
     const v2 = migrateCrewStorage({ circleId: 'c1', invites }, null);

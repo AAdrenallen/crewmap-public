@@ -1,9 +1,12 @@
 import { create } from 'zustand';
 import { fromUtf8 } from '@crewmap/p2p';
-import type { EmoteMessage } from '@crewmap/shared/emotes';
+import { fromWire, type EmoteMessage } from '@crewmap/shared/emotes';
 import { appendLog, cityCacheKey, type FriendEvent } from '@crewmap/shared/friend';
 import { kvGet, kvSet } from './db';
 import { reverseCity } from './mapbox';
+
+/** Sender keys already logged (re-sent copies of one emote log once). */
+const seenLog = new Set<string>();
 
 const MUTE_KEY = 'friendMute';
 const ASK_MUTE_KEY = 'askMute';
@@ -98,7 +101,11 @@ export function attachFriendLog(r: { on: (kind: 'arrival' | 'emote', h: (m: { se
     }),
     r.on('emote', (m) => {
       try {
-        const e = JSON.parse(fromUtf8(m.payload)) as EmoteMessage;
+        const e = fromWire(JSON.parse(fromUtf8(m.payload)));
+        if (!e) return;
+        // Re-sent copies (same sender key) are logged once.
+        if (e.k && seenLog.has(`${m.sender}:${e.k}`)) return;
+        if (e.k) seenLog.add(`${m.sender}:${e.k}`);
         void logEmote(m.sender, { preset: e.preset, mine: false, t: Date.now(), ok: true }).catch(() => undefined);
       } catch {
         /* malformed payload: ignore */

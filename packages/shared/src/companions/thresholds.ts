@@ -36,6 +36,48 @@ export const DRIVE_ALONG = {
   blipEveryMs: 250,
 } as const;
 
+/** Convoy mode tunables (D65). */
+export const CONVOY = {
+  /** A member within this of the leader's line is on the convoy route. */
+  onRouteM: 120,
+  /**
+   * Windowed projection: search this far back (GPS jitter; cars do not reverse along a route) and at least this far
+   * ahead of the last position along the line; outside it (rejoined elsewhere) the whole line is searched.
+   */
+  windowBackM: 60,
+  /** A leader's new route starting within this of the leader's place on the old line is a reroute (prefix kept). */
+  rerouteJoinM: 500,
+  windowAheadM: 1500,
+  /** Per-member position history used for time gaps ("when did the car ahead pass here"). */
+  historyMs: 30 * 60_000,
+  historyMax: 600,
+  /** Time gap fallback: distance over the follower's speed, never slower than this (m/s). */
+  minSpeedMps: 8,
+  /** Gaps below this count as "with you" (no callout). */
+  togetherM: 150,
+  /** "N lights back" only for this many signals or fewer, within this distance. */
+  lightsMax: 3,
+  lightsMaxM: 2000,
+  /** Callout buckets: minutes and metres. A callout fires when the bucket changes and holds. */
+  minuteBuckets: [1, 2, 3, 5, 10, 15],
+  meterBuckets: [500, 1000, 2000, 5000, 10_000],
+  /** A new bucket must hold this long, and callouts per member are at least this far apart. */
+  calloutHoldMs: 10_000,
+  calloutEveryMs: 90_000,
+  /** Regroup alert defaults (user-configurable): gap to the car ahead over this distance or time. */
+  regroupM: 2000,
+  regroupMin: 3,
+  /** Choices offered for the regroup thresholds. */
+  regroupMChoices: [1000, 2000, 5000],
+  regroupMinChoices: [2, 3, 5, 10],
+  /** The gap must stay over the threshold this long, re-arms below this fraction, and repeats at most this often. */
+  regroupHoldMs: 20_000,
+  regroupRearm: 0.6,
+  regroupEveryMs: 5 * 60_000,
+  /** The non-interactive regroup banner stays this long. */
+  bannerMs: 8000,
+} as const;
+
 export const FRIEND_ALERTS = {
   /** Battery below this (and not charging) alerts once per discharge. */
   batteryLowPct: 15,

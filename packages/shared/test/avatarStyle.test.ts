@@ -16,6 +16,14 @@ import {
   withColor,
   withFinish,
   AVATAR_PARTS,
+  CLEAR_LENS,
+  RIDES_NATURAL,
+  TRIM_ITEMS,
+  TRIM_STYLES,
+  trimOf,
+  withCarTint,
+  withLens,
+  withTrim,
 } from '../src/avatar';
 
 describe('avatar colours and finishes', () => {
@@ -98,8 +106,62 @@ describe('ride accent material', () => {
     };
     const withAccent = CARS.filter((m) => {
       const i = j.nodes.findIndex((n) => n.name === `car_${m}`);
-      return i >= 0 && mats(i).includes('accent');
+      return i >= 0 && mats(i).some((m) => m === 'accent' || m.startsWith('accent_'));
     });
     expect([...RIDES_WITH_ACCENT].sort()).toEqual([...withAccent].sort());
+    const natural = CARS.filter((m) => {
+      const i = j.nodes.findIndex((n) => n.name === `car_${m}`);
+      return i >= 0 && mats(i).some((x) => x.startsWith('paint_'));
+    });
+    expect([...RIDES_NATURAL].sort()).toEqual([...natural].sort());
+  });
+});
+
+describe('avatar trims and lenses', () => {
+  it('TRIM_STYLES matches the styles with `<slot>2_*` trim materials in avatar.glb', async () => {
+    const { readFileSync } = await import('node:fs');
+    const b = readFileSync(new URL('../../../apps/mobile/assets/models/avatar.glb', import.meta.url));
+    const j = JSON.parse(b.subarray(20, 20 + b.readUInt32LE(12)).toString('utf8')) as {
+      materials: { name: string }[];
+      nodes: { name?: string; mesh?: number }[];
+      meshes: { primitives: { material?: number }[] }[];
+    };
+    const prefix: Record<string, [string, string]> = { hair: ['hair', 'hair2_'], top: ['top', 'top2_'], bottom: ['bottom', 'bottom2_'], hat: ['hat', 'hat2_'], accessory: ['acc', 'extra2_'] };
+    for (const item of TRIM_ITEMS) {
+      const [node, mat] = prefix[item]!;
+      const found = new Set<string>();
+      for (const n of j.nodes) {
+        if (n.mesh === undefined || !n.name?.startsWith(`${node}_`)) continue;
+        if (j.meshes[n.mesh]!.primitives.some((p) => j.materials[p.material ?? -1]?.name.startsWith(mat))) found.add(n.name.split('_')[1]!);
+      }
+      expect([...TRIM_STYLES[item]].sort(), item).toEqual([...found].sort());
+    }
+    const lensless = AVATAR_PARTS.glasses.filter((g) => g !== 'none' && !j.nodes.some((n) => n.mesh !== undefined && n.name?.startsWith(`glasses_${g}_`) && j.meshes[n.mesh]!.primitives.some((p) => j.materials[p.material ?? -1]?.name.startsWith('lens_'))));
+    expect(lensless).toEqual(['pixel']);
+  });
+
+  it('trim, lens and glasses finish normalise and old payloads parse unchanged', () => {
+    const old = normalizeAvatar({ ...DEFAULT_AVATAR });
+    expect(old).toEqual(DEFAULT_AVATAR);
+    const cfg = normalizeAvatar({ ...DEFAULT_AVATAR, trim: { hat: 'fff', top: 'nope', shoes: '#000000' }, lens: 'clear', glassesFinish: 'gold' });
+    expect(cfg.trim).toEqual({ hat: '#FFFFFF' });
+    expect(cfg.lens).toBe(CLEAR_LENS);
+    expect(cfg.glassesFinish).toBe('gold');
+    expect(normalizeAvatar({ ...DEFAULT_AVATAR, lens: 'tinted' }).lens).toBeUndefined();
+    expect(isAvatarConfig(cfg)).toBe(true);
+  });
+
+  it('withTrim / withLens set and clear', () => {
+    const a = withTrim(DEFAULT_AVATAR, 'hat', '#123456');
+    expect(trimOf(a, 'hat')).toBe('#123456');
+    expect(withTrim(a, 'hat', null).trim).toBeUndefined();
+    expect(withLens(DEFAULT_AVATAR, '#abc').lens).toBe('#AABBCC');
+    expect(withLens(withLens(DEFAULT_AVATAR, 'clear'), null).lens).toBeUndefined();
+  });
+
+  it('ride tint is optional and round-trips', () => {
+    expect(normalizeCar({ model: 'hotdog', color: '#E53935' }).tint).toBeUndefined();
+    expect(normalizeCar({ model: 'hotdog', color: '#E53935', tint: true }).tint).toBe(true);
+    expect(withCarTint(withCarTint(DEFAULT_CAR, true), false)).toEqual(DEFAULT_CAR);
   });
 });

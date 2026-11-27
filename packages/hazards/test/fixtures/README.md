@@ -12,3 +12,10 @@
 - `qc-inondation.json`, `qc-conditions.json` — **recorded** 2026-11-24 from the MTMD WFS layers `ms:evenements_inondation`
   and `ms:conditions_routieres` (trimmed to 2 segments, 4 vertices each), CC-BY 4.0. Both recorded segments were
   "Dégagée et sèche" / good visibility; the test flips one to a snow code to exercise the non-normal path.
+- `osm-cameras-toronto.json` — **recorded** 2026-11-27 from overpass-api.de (`highway=speed_camera` nodes and
+  `type=enforcement` relations in a downtown Toronto bbox), © OpenStreetMap contributors, ODbL 1.0.
+- `regie-stations.json` — **recorded** 2026-11-27 from `regieessencequebec.ca/stations.geojson.gz` (Régie de l'énergie
+  du Québec, official station prices; 4 stations in Rouyn-Noranda / Barraute, one with super and diesel unavailable).
+- `qc-cameras.json` — **recorded** 2026-11-27 from the MTMD WFS layer `ms:infos_cameras` (3 cameras, Montréal), CC-BY 4.0.
+- `osm-pois-montreal.json` — **recorded** 2026-11-27 from overpass-api.de (`amenity=charging_station` in a downtown
+  Montréal bbox; the fuel path is exercised with an inline element), © OpenStreetMap contributors, ODbL 1.0.

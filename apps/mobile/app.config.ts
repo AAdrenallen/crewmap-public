@@ -142,6 +142,8 @@ const config: ExpoConfig = {
     // Paid Waze fallback is off unless both a key and a monthly cap > 0 are set (docs/DECISIONS.md D11).
     wazePaidKey: Number(env.WAZE_PAID_MONTHLY_CAP_USD ?? 0) > 0 ? (env.WAZE_PAID_API_KEY ?? '') : '',
     wazePaidCapUsd: Number(env.WAZE_PAID_MONTHLY_CAP_USD ?? 0),
+    // Open Charge Map (D64): free key from .env; empty = adapter off.
+    ocmKey: env.OCM_API_KEY ?? '',
     router: {},
   },
 };

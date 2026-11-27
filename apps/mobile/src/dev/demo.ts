@@ -263,7 +263,7 @@ function seededStats(): Profile['stats'] {
       events: k % 4 === 0 ? { hardBrake: 1 } : {},
     };
   });
-  const vis = { score: true, distance: true, topSpeed: true, events: true, trips: true, places: false, streaks: true, badges: true };
+  const vis = { score: true, distance: true, topSpeed: true, events: true, trips: true, places: false, streaks: true, badges: true, home: false };
   const tz = -new Date().getTimezoneOffset();
   return Object.fromEntries((['week', 'month', 'all'] as const).map((p) => [p, shareableStats(computeStats({ trips, walks: [], visits: [] }, p, now, tz), vis, now)]));
 }

@@ -24,6 +24,7 @@ import { CrewmateSheet } from '../ui/home/CrewmateSheet';
 import { needsSheet, snapHeights } from '../ui/home/sheetLogic';
 import { NavBanners } from '../ui/drive/NavBanners';
 import { ReportBar, SpeedBadge, StillThere } from '../ui/drive/DrivingHud';
+import { RouteNoticeBanner } from '../ui/drive/RouteNoticeBanner';
 import { EmoteOverlay } from '../ui/drive/EmoteOverlay';
 import { MsgBlips } from '../ui/chat/MsgBlips';
 import { CompanionOverlay } from '../ui/drive/Companions';
@@ -389,6 +390,7 @@ export default function Home() {
           <View style={[styles.still, { bottom: insets.bottom + (wide ? 112 : 140) }]}>
             <FasterOffer motion={motion} />
             <StillThere />
+            <RouteNoticeBanner />
           </View>
           <CompanionOverlay top={layout.top ? layout.top.y + layout.top.height : insets.top + 64} />
         </>

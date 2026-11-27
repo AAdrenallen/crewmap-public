@@ -9,11 +9,14 @@ import {
   validateEmote,
   type EmoteMessage,
   EMOTE_EMOJI,
+  PRESET_FALLBACK,
+  fromWire,
+  toWire,
   type EmotePreset,
 } from '@crewmap/shared/emotes';
+import { catchUpCards, catchUpMode, type CatchUpCard } from '@crewmap/shared/emoteSuggest';
 import { lang, t } from '@crewmap/shared/i18n';
 import { audioLayers, EDGE_AUDIO, planEdgeBurst, seedOf } from '@crewmap/shared/emoteBurst';
-import { notifIdFor } from '@crewmap/shared/messaging';
 import {
   EMOTE_COMBO,
   aggregateEmotes,
@@ -27,17 +30,19 @@ import {
 import type { Crews } from './crews';
 import { kvGet, kvSet } from './db';
 import { attachFriendLog, isMuted } from './friendPrefs';
+import { memoryHooks } from './memoryHooks';
 import { notifyMode, emotePopup } from '../ui/drive/driveUx';
 import { friendContextNow } from './friendContext';
 import { notify } from './notify';
+import { useCatchUp } from './catchUp';
 import { blipFor, notifyEmoteCollapsed } from './msgNotify';
 import { rideMuted, watchRideEnd } from './rideMutes';
 import { useApp } from './store';
 import { addReceived, blobUri, blobsOf, quipStore, refreshQuips } from './quips';
 import { STINGS, VOICE_LINES, type Sting } from './emoteVoiceAssets';
 
-/** Non-verbal layer under each preset's announcer line. */
-const PRESET_STING: Record<EmotePreset, Sting> = {
+/** Non-verbal layer under each preset's announcer line (newer presets reuse their fallback's). */
+const LEGACY_STING: Record<string, Sting> = {
   getMeFood: 'pop',
   areWeThereYet: 'whoosh',
   whereAreYou: 'pop',
@@ -47,6 +52,9 @@ const PRESET_STING: Record<EmotePreset, Sting> = {
   onMyWay: 'whoosh',
   missYou: 'pop',
 };
+const stingOf = (p: EmotePreset): Sting => LEGACY_STING[PRESET_FALLBACK[p]] ?? 'pop';
+/** Receiver keys of emotes already handled, kept across restarts so a relay replay never re-celebrates them. */
+const SEEN_KEY = 'emoteSeen';
 
 async function assetUri(mod: number): Promise<string> {
   const a = Asset.fromModule(mod);
@@ -76,7 +84,9 @@ export class Emotes {
   private collected: PendingEmote[] = [];
   private readonly seenKeys = new Set<string>();
   private quietTimer: ReturnType<typeof setTimeout> | null = null;
-  private notifiedBg = false;
+  private seenLoaded: Promise<void> | null = null;
+  private seenSave: ReturnType<typeof setTimeout> | null = null;
+  private cardGroups: ComboGroup[] = [];
   private streak: Streak | null = null;
   private finaleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Combos held back while driving; played once stopped. */
@@ -133,7 +143,15 @@ export class Emotes {
       watchRideEnd(),
       r.on(
         'emote',
-        (m) => void this.receive(m.sender, m.id, JSON.parse(fromUtf8(m.payload)) as EmoteMessage, m.sentAt),
+        (m) => {
+          let msg: EmoteMessage | null = null;
+          try {
+            msg = fromWire(JSON.parse(fromUtf8(m.payload)));
+          } catch {
+            /* malformed payload: ignore */
+          }
+          if (msg) void this.receive(m.sender, m.id, msg, m.sentAt);
+        },
       ),
       r.on('arrival', (m) => {
         const a = JSON.parse(fromUtf8(m.payload)) as {
@@ -172,6 +190,7 @@ export class Emotes {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     if (this.quietTimer) clearTimeout(this.quietTimer);
     this.flushTimer = this.quietTimer = null;
+    this.cardGroups = [];
   }
 
   /** Whether the friend is driving right now (from their presence). */
@@ -188,14 +207,16 @@ export class Emotes {
   }
 
   async send(to: string, msg: EmoteMessage): Promise<boolean> {
-    if (validateEmote(msg) || this.cooldown(to) > 0 || !this.net.router) return false;
+    if (validateEmote(msg) || this.cooldown(to) > 0) return false;
     this.sentAt.set(to, Date.now());
     const k = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     const full: EmoteMessage = { ...msg, k };
     await this.loadOutbox();
     this.outbox.push({ to, msg: full, t: Date.now() });
     await this.saveOutbox();
-    await this.transmitEmote(to, full, k);
+    // No router yet (engine still starting, e.g. "Send back" right after a cold start): it waits in the outbox for start().
+    if (this.net.router) await this.transmitEmote(to, full, k);
+    memoryHooks.sent(to, msg.preset);
     platform.haptics.play('bounce');
     return true;
   }
@@ -203,7 +224,7 @@ export class Emotes {
   private async transmitEmote(to: string, msg: EmoteMessage, k: string): Promise<void> {
     const r = this.net.router;
     if (!r || [...this.inflight.values()].includes(k)) return;
-    const id = await r.sendTo(to, 'emote', utf8(JSON.stringify(msg)));
+    const id = await r.sendTo(to, 'emote', utf8(JSON.stringify(toWire(msg))));
     this.inflight.set(id, k);
   }
 
@@ -269,6 +290,10 @@ export class Emotes {
       const mode = notifyMode('emote', fc.ctx, fc.next);
       if (!isMuted(q.from) && !rideMuted(q.from) && mode !== 'skip')
         void notifyEmoteCollapsed({ from: q.from, name, preset: 'custom', emoji: q.meta.emoji ?? EMOTE_EMOJI.custom, label, silent: mode === 'silent' });
+      if (!isMuted(q.from) && !rideMuted(q.from)) {
+        this.collected.push({ id: `${q.from}:quip:${q.k}`, from: q.from, preset: 'custom', label, sentAt: q.sentAt });
+        this.scheduleCombo(EMOTE_COMBO.quietMs);
+      }
       return;
     }
     if (rideMuted(q.from)) return this.logMuted(q.from);
@@ -298,14 +323,15 @@ export class Emotes {
   }
 
   /** Record a custom clip (≤ 5 s, size-capped) → base64. */
-  async recordClip(): Promise<{ clip: string; clipMs: number } | null> {
+  async recordClip(onStart?: () => void): Promise<{ clip: string; clipMs: number } | null> {
     if (
       (await platform.audio.micPermission()) !== 'granted' &&
       (await platform.audio.requestMic()) !== 'granted'
     )
       return null;
-    const r = await platform.audio.record(EMOTE_LIMITS.maxClipMs);
-    if (!r.uri || r.bytes > EMOTE_LIMITS.maxClipBytes) return null;
+    const r = await platform.audio.record(EMOTE_LIMITS.maxClipMs, onStart);
+    // A tap that is too short to be a shout is dropped.
+    if (!r.uri || r.durationMs < 400 || r.bytes > EMOTE_LIMITS.maxClipBytes) return null;
     const clip = await new File(r.uri).base64();
     return { clip, clipMs: Math.min(r.durationMs, EMOTE_LIMITS.maxClipMs) };
   }
@@ -318,9 +344,13 @@ export class Emotes {
     if (validateEmote(msg)) return;
     // Dedupe by the sender's key (re-sent copies), never by emote type: rapid repeats all count.
     const key = `${from}:${msg.k ?? id}`;
+    await this.loadSeen();
     if (this.seenKeys.has(key)) return;
     this.seenKeys.add(key);
     if (this.seenKeys.size > EMOTE_COMBO.seenCap) this.seenKeys.delete(this.seenKeys.values().next().value as string);
+    this.saveSeenSoon();
+    // Away: the system notification goes out now (a JS timer may never fire while backgrounded), collapsed per sender.
+    if (AppState.currentState !== 'active') this.notifyAway(from, msg);
     // Live and in the foreground: play right away. Anything else (catch-up replay, background) is collected.
     if (Date.now() - sentAt > EMOTE_COMBO.freshMs || AppState.currentState !== 'active') {
       this.collected.push({
@@ -345,30 +375,38 @@ export class Emotes {
     }, ms);
   }
 
-  /** Replay went quiet: group, notify once per sender in the background, celebrate once foreground and booted. */
+  private notifyAway(from: string, msg: EmoteMessage): void {
+    const fc = friendContextNow();
+    const mode = notifyMode('emote', fc.ctx, fc.next);
+    if (isMuted(from) || rideMuted(from) || mode === 'skip') return;
+    const label = msg.preset === 'custom' ? (msg.label ?? t('emote.custom')) : t(`emote.${msg.preset}`);
+    void notifyEmoteCollapsed({ from, name: this.net.doc.profile(from)?.name ?? '', preset: msg.preset, emoji: EMOTE_EMOJI[msg.preset], label, silent: mode === 'silent' });
+  }
+
+  private loadSeen(): Promise<void> {
+    this.seenLoaded ??= kvGet<string[]>(SEEN_KEY, []).then(
+      (keys) => {
+        for (const k of keys) this.seenKeys.add(k);
+      },
+      () => undefined,
+    );
+    return this.seenLoaded;
+  }
+
+  private saveSeenSoon(): void {
+    if (this.seenSave) return;
+    this.seenSave = setTimeout(() => {
+      this.seenSave = null;
+      void kvSet(SEEN_KEY, [...this.seenKeys].slice(-EMOTE_COMBO.seenCap)).catch(() => undefined);
+    }, 2000);
+  }
+
+  /** Replay went quiet: once foreground and booted, celebrate what was missed (the notifications already went out). */
   private settleCollected(): void {
     if (!this.collected.length) return;
+    // Background: keep collecting, AppState 'active' re-arms this. Not ready: the store's ready flip re-arms it.
+    if (AppState.currentState !== 'active' || !useApp.getState().ready) return;
     const summary = aggregateEmotes(this.collected, Date.now());
-    const fc = friendContextNow();
-    if (AppState.currentState !== 'active') {
-      if (this.notifiedBg) return;
-      this.notifiedBg = true;
-      for (const g of summary.groups) {
-        const mode = notifyMode('emote', fc.ctx, fc.next);
-        if (isMuted(g.from) || rideMuted(g.from) || mode === 'skip') continue;
-        const name = this.net.doc.profile(g.from)?.name ?? '';
-        // Same identifier as notifyEmoteCollapsed: the catch-up summary replaces that friend's live notification.
-        void notify(t('notif.emoteMany', { name, count: String(g.count), emoji: EMOTE_EMOJI[g.preset] }), '', {
-          channel: 'circle',
-          silent: mode === 'silent',
-          identifier: notifIdFor('emote', g.from, g.preset),
-          data: { type: 'emote', friendId: g.from, preset: g.preset },
-        });
-      }
-      return;
-    }
-    if (!useApp.getState().ready) return; // re-armed when the store becomes ready (no boot-splash blast)
-    this.notifiedBg = false;
     this.collected = [];
     if (summary.stale.length) {
       const digest = { ...useApp.getState().emoteDigest };
@@ -378,10 +416,26 @@ export class Emotes {
       }
       useApp.getState().set({ emoteDigest: digest });
     }
-    for (const g of summary.groups) {
-      if (rideMuted(g.from)) this.logMuted(g.from, g.count, g.latestAt);
-      else void this.celebrate(g);
-    }
+    const live = summary.groups.filter((g) => {
+      if (!rideMuted(g.from)) return true;
+      this.logMuted(g.from, g.count, g.latestAt);
+      return false;
+    });
+    if (!live.length) return;
+    const s = useApp.getState();
+    const mode = catchUpMode({ driving: s.driving, navigating: s.nav?.active === true, soundWhileDriving: s.settings.drivingEmoteSound && s.settings.voice === 'on' });
+    this.cardGroups = [...this.cardGroups, ...live];
+    useCatchUp.getState().enqueue(catchUpCards(live), mode.style, mode.sound);
+    // Driving: the toast is all; the big combos wait until we stop.
+    if (mode.style === 'toast') for (const g of live) if (g.count > 1) this.deferred.push(g);
+  }
+
+  /** The fanfare shows a sender's card: burst (and sound when allowed) for their biggest group; the card carries the total. */
+  playCard(c: CatchUpCard, sound: boolean): void {
+    const mine = this.cardGroups.filter((g) => g.from === c.from).sort((x, y) => y.count - x.count);
+    this.cardGroups = this.cardGroups.filter((g) => g.from !== c.from);
+    const top = mine[0];
+    if (top) void this.playCombo(top, sound);
   }
 
   /** Ride-muted emotes are not shown or played, only counted into the friend's emote digest. */
@@ -402,17 +456,6 @@ export class Emotes {
     };
   }
 
-  private async celebrate(g: ComboGroup): Promise<void> {
-    const s = useApp.getState();
-    const driving = s.driving || s.nav?.active === true;
-    if (!driving) return this.playCombo(g);
-    // Moving: a small pill only; the big combo waits until we stop.
-    const fc = friendContextNow();
-    if (g.count > 1) this.deferred.push(g);
-    if (emotePopup(fc.ctx, fc.next, s.settings.drivingEmotePopups)) s.set({ emotes: [...useApp.getState().emotes, this.comboItem(g, 1)] });
-    else if (s.settings.drivingEmotePopups) blipFor({ thread: g.from, from: g.from, name: this.net.doc.profile(g.from)?.name ?? '', kind: 'emote', viewing: false, muted: isMuted(g.from), overlayShown: false });
-  }
-
   private playDeferred(): void {
     const list = this.deferred;
     this.deferred = [];
@@ -422,20 +465,20 @@ export class Emotes {
     }
   }
 
-  private async playCombo(g: ComboGroup): Promise<void> {
+  private async playCombo(g: ComboGroup, sound = true): Promise<void> {
     // Front of the queue: the overlay shows it now, in sync with the sound and haptics below.
     const item = this.comboItem(g, g.count);
     useApp.getState().set({ emotes: [item, ...useApp.getState().emotes] });
     const plan = comboPlan(g.count);
     plan.offsetsMs.forEach((off, i) => setTimeout(() => platform.haptics.play(i === plan.bursts - 1 ? 'success' : 'bounce'), off));
-    if (g.preset === 'custom') return;
+    if (g.preset === 'custom' || !sound) return;
     // Announcer line first, then escalating stings under the cascade (same planner as the overlay), cheer finale.
     const screen = { w: 400, h: 800 };
     const layers = audioLayers(planEdgeBurst({ screen, count: g.count, driving: false, occupied: [], seed: seedOf(item.id) }), g.count);
     void this.voice(g.preset).then((u) => {
       if (u) void platform.audio.playClip(u, { duckUnderVoice: false });
     });
-    const sting = await assetUri(STINGS[PRESET_STING[g.preset]]);
+    const sting = await assetUri(STINGS[stingOf(g.preset)]);
     for (const l of layers) setTimeout(() => void platform.audio.playClip(sting, { duckUnderVoice: false, volume: l.volume, rate: l.rate }), l.delayMs + 250);
     if (g.count >= 3) {
       const cheer = await assetUri(STINGS.cheer);
@@ -470,7 +513,7 @@ export class Emotes {
     if (pop.sound) {
       // Each repeat: the preset's sting, a little louder and higher (capped); the voice again every 4th.
       const rate = Math.min(EDGE_AUDIO.maxRate, 1 + (st.count - 1) * EDGE_AUDIO.rateStep);
-      const uri = st.count % 4 === 0 ? await this.voice(msg.preset) : await assetUri(STINGS[PRESET_STING[msg.preset]]);
+      const uri = st.count % 4 === 0 ? await this.voice(msg.preset) : await assetUri(STINGS[stingOf(msg.preset)]);
       if (uri) void platform.audio.playClip(uri, { duckUnderVoice: false, volume: pop.volume, rate });
     }
     return true;
@@ -481,7 +524,6 @@ export class Emotes {
     const driving = s.driving || s.nav?.active === true;
     const fc = friendContextNow();
     const name = this.net.doc.profile(from)?.name ?? '';
-    const label = msg.preset === 'custom' ? (msg.label ?? t('emote.custom')) : t(`emote.${msg.preset}`);
     if (rideMuted(from)) {
       this.logMuted(from);
       return;
@@ -514,21 +556,16 @@ export class Emotes {
       const uri = clipUri ?? (msg.preset !== 'custom' ? await this.voice(msg.preset) : null);
       if (uri) void platform.audio.playClip(uri, { duckUnderVoice: driving });
       if (!driving && !clipUri && msg.preset !== 'custom') {
-        const sting = await assetUri(STINGS[PRESET_STING[msg.preset]]);
+        const sting = await assetUri(STINGS[stingOf(msg.preset)]);
         void platform.audio.playClip(sting, { duckUnderVoice: false, volume: 0.45 });
       }
-    }
-    if (AppState.currentState !== 'active') {
-      const mode = notifyMode('emote', fc.ctx, fc.next);
-      if (!isMuted(from) && mode !== 'skip')
-        void notifyEmoteCollapsed({ from, name, preset: msg.preset, emoji: EMOTE_EMOJI[msg.preset], label, silent: mode === 'silent' });
     }
   }
 
   /** One of the preset's Crew Radio announcer lines in the app language, never the same one twice in a row. */
   private lastVoice = new Map<EmotePreset, number>();
   private async voice(p: EmotePreset): Promise<string | null> {
-    const list = VOICE_LINES[lang()][p];
+    const list = VOICE_LINES[lang()][PRESET_FALLBACK[p]];
     if (!list.length) return null;
     const prev = this.lastVoice.get(p) ?? -1;
     let i = Math.floor(Math.random() * list.length);

@@ -8,3 +8,6 @@ export function ageText(age: { unit: AgeUnit; n: number }): string {
 }
 
 export const hazardAgeText = (h: { latestReportAt: number }, now: number): string => ageText(hazardAge(h, now));
+
+/** Age of a map point price / record (D64). */
+export const poiAge = (at: number, now: number): string => ageText(hazardAge({ latestReportAt: at }, now));

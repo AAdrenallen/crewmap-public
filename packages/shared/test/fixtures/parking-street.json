@@ -1,0 +1,79 @@
+{
+ "note": "Synthetic Overpass response around a public landmark (Carré Saint-Louis, Montréal). Street parking.",
+ "spot": {
+  "lat": 45.5167,
+  "lng": -73.569
+ },
+ "osm": {
+  "version": 0.6,
+  "generator": "synthetic",
+  "elements": [
+   {
+    "type": "way",
+    "id": 1,
+    "tags": {
+     "highway": "secondary",
+     "name": "Rue Saint-Denis",
+     "oneway": "yes"
+    },
+    "geometry": [
+     {
+      "lat": 45.5161604,
+      "lon": -73.5690513
+     },
+     {
+      "lat": 45.5172396,
+      "lon": -73.5690513
+     }
+    ]
+   },
+   {
+    "type": "way",
+    "id": 2,
+    "tags": {
+     "building": "retail"
+    },
+    "geometry": [
+     {
+      "lat": 45.5166281,
+      "lon": -73.5688717
+     },
+     {
+      "lat": 45.5166281,
+      "lon": -73.5686791
+     },
+     {
+      "lat": 45.5167719,
+      "lon": -73.5686791
+     },
+     {
+      "lat": 45.5167719,
+      "lon": -73.5688717
+     },
+     {
+      "lat": 45.5166281,
+      "lon": -73.5688717
+     }
+    ]
+   },
+   {
+    "type": "way",
+    "id": 3,
+    "tags": {
+     "highway": "footway",
+     "footway": "sidewalk"
+    },
+    "geometry": [
+     {
+      "lat": 45.5161604,
+      "lon": -73.5689358
+     },
+     {
+      "lat": 45.5172396,
+      "lon": -73.5689358
+     }
+    ]
+   }
+  ]
+ }
+}

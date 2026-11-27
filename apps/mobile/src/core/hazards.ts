@@ -18,8 +18,10 @@ import {
   hazardsFromRoute,
   HazardService,
   MontrealSource,
+  OsmCameraSource,
   QuebecSource,
   reportAlive,
+  WazeLiveMapSource,
   WazePaidSource,
   type FriendReport,
   type FriendReportType,
@@ -27,17 +29,21 @@ import {
   type MergedHazard,
   type HazardConfig,
   type HttpGet,
+  type OsmSnapshot,
   type SpendLedger,
 } from '@crewmap/hazards';
 import { b64, DEFAULT_PUBLIC_RELAYS, fromUtf8, sodium, unb64, utf8, type DeviceIdentity, type NostrEvent, type NostrFilter } from '@crewmap/p2p';
 import { bboxOf, cumulativeDistances, projectOnPolyline, type BBox } from '@crewmap/shared/geo';
 import { lang, t, type I18nKey } from '@crewmap/shared/i18n';
 import { formatDistance } from '@crewmap/shared/units';
+import { countRequest } from './apiBudget';
 import { kvGet, kvSet } from './db';
 import type { Crews } from './crews';
 import { isMuted } from './friendPrefs';
 import { notify } from './notify';
+import { Pois } from './pois';
 import { useApp } from './store';
+import { roadWeather } from './roadWeather';
 
 const http: HttpGet = async (url, headers) => {
   const res = await fetch(url, { headers: headers ?? {} });
@@ -82,11 +88,16 @@ function anonTopics(): string[] {
   return s.fix ? [geohashEncode(s.fix, ANON.topicPrecision)] : [];
 }
 
+/** Map points are only listed for a drive-sized area (a zoomed-out province view would mean thousands of pins). */
+const poiArea = (b: BBox | null): boolean => !!b && b.north - b.south <= 1 && b.east - b.west <= 1.5;
+
 export class Hazards {
   readonly service: HazardService;
   private readonly ledger = new KvLedger();
   private local: Hazard[] = [];
   private lastWaze = 0;
+  private readonly osm = new OsmCameraSource(http, undefined, () => countRequest('overpass'));
+  readonly pois: Pois;
   private readonly anon = new AnonHazardStore();
   private readonly anonLimit = new AnonRateLimit();
   private anonSub: { close(): void } | null = null;
@@ -106,16 +117,22 @@ export class Hazards {
     private readonly me: DeviceIdentity,
   ) {
     ownReports.selfId = me.deviceId;
+    this.pois = new Pois(http, net);
     const extra = (Constants.expoConfig?.extra ?? {}) as { wazePaidKey?: string; wazePaidCapUsd?: number };
     this.service = new HazardService({
+      waze: new WazeLiveMapSource(http),
       paid: new WazePaidSource(http, extra.wazePaidKey ?? '', extra.wazePaidCapUsd ?? 0, this.ledger),
       quebec: new QuebecSource(feedHttp),
       montreal: new MontrealSource(feedHttp),
+      osm: this.osm,
     });
   }
 
   async start(): Promise<void> {
     await this.ledger.load();
+    this.osm.restore(await kvGet<OsmSnapshot | null>('osmCameras', null), Date.now());
+    await this.pois.start();
+    await roadWeather.start();
     this.applyConfigFromDoc();
     const router = this.net.router;
     if (router) {
@@ -333,6 +350,8 @@ export class Hazards {
         this.local = got;
       }
     }
+    // Road-weather alerts for the route being navigated (D70): this phone only, it alone has the route.
+    if (s.nav?.active && s.online) await roadWeather.refresh(s.nav.route, now);
     this.syncAnonSubscription(anyoneDriving || mapOpen || !!s.nav?.active);
     // Official feeds: on the elected chore peer, only while someone drives or has the map open (none while idle; D44).
     if ((anyoneDriving || mapOpen) && (await this.isChorePeer())) {
@@ -340,7 +359,9 @@ export class Hazards {
       if (pts.length) {
         const bbox = s.nav?.route ? bboxOf(s.nav.route.geometry, 2000) : this.viewport ?? bboxOf(pts, 30_000);
         const qc = await this.service.fetchOfficial(bbox, now, anyoneDriving);
+        if (this.osm.health().lastOkAt === now) void kvSet('osmCameras', this.osm.snapshot());
         if (qc.length) void this.net.router?.broadcast('hazards', utf8(JSON.stringify(qc.slice(0, 200))));
+        await this.pois.choreRefresh(bbox, s.fix ?? pts[0]!, now);
       }
     }
     this.net.doc.pruneReports((r) => reportAlive(r, now));
@@ -369,8 +390,10 @@ export class Hazards {
     });
     for (const [id, t] of this.mapboxFirstSeen) if (now - t > 24 * 3600_000) this.mapboxFirstSeen.delete(id);
     const fromFriends = hazardsFromReports(this.net.doc.allReports(), now);
-    const merged = this.service.merged([...this.local, ...fromRoute, ...fromFriends, ...this.anon.hazards(now)], now);
-    useApp.getState().set({ hazards: merged, hazardHealth: this.service.health() });
+    const osmArea = s.nav?.route ? bboxOf(s.nav.route.geometry, 2000) : this.viewport;
+    const osm = osmArea ? this.osm.cached(osmArea, now) : [];
+    const merged = this.service.merged([...this.local, ...fromRoute, ...fromFriends, ...osm, ...this.anon.hazards(now)], now);
+    useApp.getState().set({ hazards: merged, hazardHealth: [...this.service.health(), ...this.pois.health(), ...roadWeather.health()], pois: poiArea(osmArea) ? this.pois.within(osmArea!, now) : [] });
     this.notifyAhead(merged, now);
   }
 

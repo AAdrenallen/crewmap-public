@@ -49,10 +49,17 @@ import { palette } from '../theme';
 import { MapSprite } from './Sprites';
 import { HAZARD_ICON } from './hazardIcons';
 import { PlacesLayer } from './PlacesLayer';
+import { PoisLayer } from './PoisLayer';
 import { setMapBearing, useMapBearing } from './mapBearing';
 import { CompanionRoutes } from './CompanionRoutes';
+import { useDriveAlong } from '../../core/companions';
+import { ParkedCar } from './ParkedCar';
+import { ROUTE_COLORS, alternativeFeatures, colorOfRoute, routeFeatures } from './routeColors';
+import { fitBounds } from '@crewmap/shared/cameraFit';
 import { setProjector } from './projector';
 import { useFriendPose, useSelfMotion, useSelfPose } from './motion';
+import { CLUSTER, clusterByPixels, clusterTap, isSameSpot } from '@crewmap/shared/crewCluster';
+import { ClusterMarker, ClusterSheet, type CrewCluster } from './CrewClusters';
 import { getLastCenter } from '../../core/lastCenter';
 import { finite } from '../../core/errorScrub';
 import { onMapboxImageMissing, onMapboxLoadingError } from '../../core/errorLog';
@@ -61,13 +68,6 @@ Mapbox.setAccessToken(MAPBOX_TOKEN);
 // No Mapbox telemetry: privacy, and no background event uploads (CPU, radio).
 Mapbox.setTelemetryEnabled(false);
 
-const CONGESTION_COLOR: Record<string, string> = {
-  unknown: '#5B6CFF',
-  low: '#5B6CFF',
-  moderate: '#FFB224',
-  heavy: '#E5484D',
-  severe: '#8E1B1E',
-};
 const HAZARD_IMAGES = Object.fromEntries(Object.entries(HAZARD_ICON).map(([k, v]) => [`hz-${k}`, v]));
 /** Hazards reported within this window get a halo. */
 const HAZARD_FRESH_MS = 2 * 60_000;
@@ -84,32 +84,6 @@ const TERRAIN_STYLE = { exaggeration: 1.15 };
 export interface CrewMapHandle {
   recenter(): void;
   flyTo(lat: number, lng: number, zoom?: number): void;
-}
-
-function routeFeatures(route: NavRoute) {
-  // Split the route into congestion-coloured segments (merge runs of equal congestion).
-  const feats: GeoJSON.Feature<GeoJSON.LineString, { color: string }>[] = [];
-  let start = 0;
-  for (let i = 1; i <= route.congestion.length; i++) {
-    if (i === route.congestion.length || route.congestion[i] !== route.congestion[start]) {
-      const coords = route.geometry.slice(start, i + 1).map((p) => [p.lng, p.lat]);
-      if (coords.length >= 2)
-        feats.push({
-          type: 'Feature',
-          properties: { color: CONGESTION_COLOR[route.congestion[start] ?? 'unknown']! },
-          geometry: { type: 'LineString', coordinates: coords },
-        });
-      start = i;
-    }
-  }
-  if (feats.length === 0 && route.geometry.length >= 2) {
-    feats.push({
-      type: 'Feature',
-      properties: { color: CONGESTION_COLOR.low! },
-      geometry: { type: 'LineString', coordinates: route.geometry.map((p) => [p.lng, p.lat]) },
-    });
-  }
-  return { type: 'FeatureCollection' as const, features: feats };
 }
 
 // Static layer styles: module constants so the native side never re-applies them on a re-render.
@@ -152,20 +126,23 @@ const S = {
     textKeepUpright: false,
     textRotationAlignment: 'map',
   }),
+  // Our route layers are emissive (lineEmissiveStrength 1): the Standard style lights custom layers with its
+  // light preset, and at dusk / night unlit lines turned near-black (the "black alternatives" bug).
   altCasing: line({
-    lineColor: '#5B6275',
+    lineColor: '#FFFFFF',
     lineWidth: 9,
-    lineOpacity: 0.55,
+    lineOpacity: 0.7,
     lineCap: 'round',
     lineJoin: 'round',
+    lineEmissiveStrength: 1,
   }),
-  altLine: line({ lineColor: '#AEB4C2', lineWidth: 6, lineCap: 'round', lineJoin: 'round' }),
-  routeCasing: line({ lineColor: '#1F2A8A', lineWidth: 10, lineCap: 'round', lineJoin: 'round' }),
-  routeCasingNav: line({ lineColor: '#1F2A8A', lineWidth: 13, lineCap: 'round', lineJoin: 'round' }),
-  routeLine: line({ lineColor: ['get', 'color'], lineWidth: 7, lineCap: 'round', lineJoin: 'round' }),
-  routeLineNav: line({ lineColor: ['get', 'color'], lineWidth: 9, lineCap: 'round', lineJoin: 'round' }),
-  rampGlow: line({ lineColor: palette.sun, lineWidth: 18, lineOpacity: 0.45, lineBlur: 6 }),
-  rampLine: line({ lineColor: '#FFFFFF', lineWidth: 5, lineDasharray: [2, 1.5] }),
+  altLine: line({ lineColor: ['coalesce', ['get', 'color'], ROUTE_COLORS[1]], lineWidth: 6, lineOpacity: 0.8, lineCap: 'round', lineJoin: 'round', lineEmissiveStrength: 1 }),
+  routeCasing: line({ lineColor: '#1F2A8A', lineWidth: 11, lineCap: 'round', lineJoin: 'round', lineEmissiveStrength: 1 }),
+  routeCasingNav: line({ lineColor: '#1F2A8A', lineWidth: 13, lineCap: 'round', lineJoin: 'round', lineEmissiveStrength: 1 }),
+  routeLine: line({ lineColor: ['coalesce', ['get', 'color'], ROUTE_COLORS[0]], lineWidth: 8, lineCap: 'round', lineJoin: 'round', lineEmissiveStrength: 1 }),
+  routeLineNav: line({ lineColor: ['coalesce', ['get', 'color'], ROUTE_COLORS[0]], lineWidth: 9, lineCap: 'round', lineJoin: 'round', lineEmissiveStrength: 1 }),
+  rampGlow: line({ lineColor: palette.sun, lineWidth: 18, lineOpacity: 0.45, lineBlur: 6, lineEmissiveStrength: 1 }),
+  rampLine: line({ lineColor: '#FFFFFF', lineWidth: 5, lineDasharray: [2, 1.5], lineEmissiveStrength: 1 }),
   heat: heatmap({
     heatmapWeight: ['get', 'w'],
     heatmapRadius: 30,
@@ -258,8 +235,8 @@ const rampStepSel = (s: StoreState): number => {
 // Always mounted (empty when there is no route): unmounting the source while its layers update raced into
 // "Source 'route' is not in style" when navigation ended.
 const EMPTY_ROUTE: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
-const RouteLayer = memo(function RouteLayer({ route, navigating }: { route: NavRoute | null; navigating: boolean }) {
-  const shape = useMemo(() => (route ? routeFeatures(route) : EMPTY_ROUTE), [route]);
+const RouteLayer = memo(function RouteLayer({ route, navigating, color }: { route: NavRoute | null; navigating: boolean; color: string }) {
+  const shape = useMemo(() => (route ? routeFeatures(route, color) : EMPTY_ROUTE), [route, color]);
   return (
     <ShapeSource id="route" shape={shape}>
       <LineLayer id="route-casing" slot="middle" style={navigating ? S.routeCasingNav : S.routeCasing} />
@@ -381,7 +358,9 @@ const FriendMarker = memo(function FriendMarker({
   // A one-time share (D47): compact countdown on the label, e.g. "Bob · ◷ 23m".
   const now = useNow();
   const once = f.once && f.once.until > now ? `◷ ${minutesLeft(f.once.until, now)}m` : null;
-  const label = [f.profile.name, eta, once].filter(Boolean).join(' · ');
+  // Convoy (D65): place in the line; the store changes only when the order does.
+  const order = useDriveAlong((s) => s.convoyOrder[f.profile.deviceId] ?? null);
+  const label = `${order !== null ? `${order}. ` : ''}${[f.profile.name, eta, once].filter(Boolean).join(' · ')}`;
   return (
     <MarkerView coordinate={coord} allowOverlap allowOverlapWithPuck anchor={MARKER_ANCHOR}>
       <View
@@ -409,13 +388,19 @@ const FriendMarker = memo(function FriendMarker({
   );
 });
 
-const FriendMarkers = memo(function FriendMarkers({ onPress }: { onPress: (id: string) => void }) {
+const FriendMarkers = memo(function FriendMarkers({
+  onPress,
+  hidden,
+}: {
+  onPress: (id: string) => void;
+  hidden: ReadonlySet<string>;
+}) {
   const friends = useApp((s) => s.friends);
   const bearing = useMapBearing((s) => s.bearing);
   return (
     <>
       {Object.values(friends).map((f) =>
-        f.presence && !f.paused ? (
+        f.presence && !f.paused && !hidden.has(f.profile.deviceId) ? (
           <FriendMarker key={f.profile.deviceId} f={f} bearing={bearing} onPress={onPress} />
         ) : null,
       )}
@@ -532,12 +517,11 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
       },
       showBoth: (a, b) => {
         setFollow(false);
-        cam.current?.fitBounds(
-          [Math.max(a.lng, b.lng), Math.max(a.lat, b.lat)],
-          [Math.min(a.lng, b.lng), Math.min(a.lat, b.lat)],
-          [140, 70, 160, 70],
-          700,
-        );
+        const { width, height } = Dimensions.get('window');
+        const pad = [140, 70, 160, 70] as const;
+        // Never zoom to a single building when the companion is right next to us.
+        const fit = fitBounds({ ne: [Math.max(a.lng, b.lng), Math.max(a.lat, b.lat)], sw: [Math.min(a.lng, b.lng), Math.min(a.lat, b.lat)] }, { width, height, padding: pad });
+        cam.current?.fitBounds(fit.ne, fit.sw, [...pad], 700);
         if (back) clearTimeout(back);
         back = setTimeout(() => setFollow(true), 4000);
       },
@@ -575,28 +559,17 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
       }
     }
     // Portrait: the route sheet covers the bottom ~55%; landscape: the left panel. Keep every candidate visible.
-    return { ne: [e, n], sw: [w, s], ...previewPaddingFor(lay) };
-  }, [previewLines, lay.wide, lay.panelW, lay.height]);
-  // Unselected candidates, drawn grey under the selected route; tapping one selects it.
+    const pad = previewPaddingFor(lay);
+    // A destination next door must not zoom to a single building: minimum span / max zoom (CAMERA_FIT).
+    const fit = fitBounds({ ne: [e, n], sw: [w, s] }, { width: lay.width, height: lay.height, padding: [pad.paddingTop, pad.paddingRight, pad.paddingBottom, pad.paddingLeft] });
+    return { ne: fit.ne, sw: fit.sw, ...pad };
+  }, [previewLines, lay.wide, lay.panelW, lay.height, lay.width]);
+  // Unselected candidates, each in its own colour under the selected route; tapping one selects it.
   const altShape = useMemo(
-    () => ({
-      type: 'FeatureCollection' as const,
-      features:
-        preview && route && candidates
-          ? candidates
-              .filter((c) => c.route.id !== route.id)
-              .map((c) => ({
-                type: 'Feature' as const,
-                properties: { id: c.route.id },
-                geometry: {
-                  type: 'LineString' as const,
-                  coordinates: c.route.geometry.map((p) => [p.lng, p.lat]),
-                },
-              }))
-          : [],
-    }),
+    () => (preview && route && candidates ? alternativeFeatures(candidates, route.id) : EMPTY_ROUTE),
     [preview, route, candidates],
   );
+  const routeLineColor = useMemo(() => (route ? colorOfRoute(route.id, candidates) : ROUTE_COLORS[0]), [route, candidates]);
   // Preview frames the routes flat (pitch 0, follow off). When the preview closes without navigating, return to the
   // 3D follow view; otherwise the map stayed flat and zoomed out until the user tapped recenter.
   const hadPreview = useRef(false);
@@ -673,6 +646,82 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
     };
   }
 
+  // Crew clusters (D55): recomputed when the camera settles or presence changes, throttled; never per frame.
+  const [clusters, setClusters] = useState<CrewCluster[]>([]);
+  const [clusterList, setClusterList] = useState<string[] | null>(null);
+  const reclusterAt = useRef(0);
+  const reclusterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recluster = useCallback(() => {
+    const run = async () => {
+      reclusterAt.current = Date.now();
+      const m = mapRef.current;
+      if (!m) return;
+      const st = useApp.getState();
+      const live = Object.values(st.friends).filter((f) => f.presence && !f.paused);
+      if (live.length < 2) {
+        setClusters((c) => (c.length ? [] : c));
+        return;
+      }
+      const pts = await Promise.all(
+        live.map(async (f) => {
+          const p = await m.getPointInView([f.presence!.lng, f.presence!.lat]);
+          return { id: f.profile.deviceId, x: p?.[0] ?? NaN, y: p?.[1] ?? NaN };
+        }),
+      );
+      const drive = st.driving || st.nav?.active === true;
+      const groups = clusterByPixels(pts, drive ? CLUSTER.overlapPxDriving : CLUSTER.overlapPx).filter((g) => g.length > 1);
+      const next = groups.map((ids) => ({
+        ids,
+        same: isSameSpot(ids.map((id) => st.friends[id]!.presence!)),
+      }));
+      setClusters((c) => (JSON.stringify(c) === JSON.stringify(next) ? c : next));
+    };
+    if (reclusterTimer.current) return;
+    const wait = Math.max(0, reclusterAt.current + CLUSTER.recomputeMs - Date.now());
+    reclusterTimer.current = setTimeout(() => {
+      reclusterTimer.current = null;
+      void run().catch(() => undefined);
+    }, wait);
+  }, []);
+  useEffect(() => {
+    const unsub = useApp.subscribe((s, prev) => {
+      if (s.friends !== prev.friends || s.driving !== prev.driving) recluster();
+    });
+    return () => {
+      unsub();
+      if (reclusterTimer.current) clearTimeout(reclusterTimer.current);
+    };
+  }, [recluster]);
+  const hidden = useMemo(() => new Set(clusters.flatMap((c) => c.ids)), [clusters]);
+  const onClusterPress = useCallback((c: CrewCluster) => {
+    const m = mapRef.current;
+    if (!m) return;
+    void m
+      .getZoom()
+      .then((zoom) => {
+        const st = useApp.getState();
+        const pts = c.ids.flatMap((id) => (st.friends[id]?.presence ? [st.friends[id]!.presence!] : []));
+        const { width, height } = Dimensions.get('window');
+        const tap = clusterTap(pts, zoom, { width, height });
+        if (tap.kind === 'list') {
+          setClusterList(c.ids);
+          return;
+        }
+        setFollow(false);
+        cam.current?.setCamera({
+          centerCoordinate: [tap.center.lng, tap.center.lat],
+          zoomLevel: tap.zoom,
+          animationDuration: 700,
+          animationMode: 'easeTo',
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+  const closeClusterList = useCallback(() => setClusterList(null), []);
+  const openFromCluster = useCallback((id: string) => {
+    setClusterList(null);
+    cb.current.onFriendPress?.(id);
+  }, []);
   // No onCameraChanged: it serialises the full camera state to JS on every rendered frame while following.
   // A native observer reports at most every CAMERA_POLL_MS; viewport and sprite bearing are read then.
   const onSteady = useCallback((e: { nativeEvent: { lastGestureType?: string | null } }) => {
@@ -691,7 +740,8 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
         cb.current.onViewport?.({ north: ne![1]!, east: ne![0]!, south: sw![1]!, west: sw![0]! });
       })
       .catch(() => undefined);
-  }, []);
+    recluster();
+  }, [recluster]);
   const onLongPress = useCallback((f: GeoJSON.Feature) => {
     const c = (f.geometry as GeoJSON.Point).coordinates;
     cb.current.onLongPress?.(c[1]!, c[0]!);
@@ -789,6 +839,7 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
           />
         </VectorSource>
 
+        <PoisLayer />
         <PlacesLayer onPress={onPlacePress} />
 
         {altShape.features.length > 0 && (
@@ -797,17 +848,22 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
             <LineLayer id="route-alts-line" slot="middle" style={S.altLine} />
           </ShapeSource>
         )}
-        <RouteLayer route={route} navigating={navigating} />
+        <RouteLayer route={route} navigating={navigating} color={routeLineColor} />
         {navigating && <RampLayer />}
 
         <HazardLayers driving={driving} onPress={onHazardPress} />
 
         <CompanionRoutes />
-        <FriendMarkers onPress={onFriendPress} />
+        <ParkedCar />
+        <FriendMarkers onPress={onFriendPress} hidden={hidden} />
+        {clusters.map((c) => (
+          <ClusterMarker key={c.ids.join('|')} c={c} driving={driving || navigating} onPress={onClusterPress} />
+        ))}
         <SelfLocation />
         <SelfMarker />
       </MapView>
       {overlay}
+      <ClusterSheet ids={clusterList} onClose={closeClusterList} onOpen={openFromCluster} />
     </View>
   );
 });

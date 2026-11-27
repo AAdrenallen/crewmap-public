@@ -2,13 +2,14 @@ import { TipBanner } from '../ui/shell/TipBanner';
 import { useMemo, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { driveAlongScreenState, groupRows, roughEtaMs, type GroupDest } from '@crewmap/shared/companions';
-import { t } from '@crewmap/shared/i18n';
-import { formatClock, formatMinutes } from '@crewmap/shared/units';
+import { CONVOY, convoyCrew, convoyLeader, driveAlongScreenState, groupRows, roughEtaMs, type GroupDest } from '@crewmap/shared/companions';
+import { lang, t } from '@crewmap/shared/i18n';
+import { formatClock, formatDistance, formatMinutes } from '@crewmap/shared/units';
 import { engine } from '../core/engine';
 import { useCompanionLive, useDriveAlong } from '../core/companions';
 import { useApp } from '../core/store';
-import { Button, Card, Icon, Row, ScreenHeader, SectionLabel, Toggle } from '../ui/kit';
+import { Button, Card, Icon, Row, ScreenHeader, SectionLabel, Segmented, Toggle } from '../ui/kit';
+import { patchConvoyPrefs, useConvoyPrefs } from '../core/convoyPrefs';
 import { useLayoutMode, pageX } from '../ui/layout';
 import { type, useTheme } from '../ui/theme';
 
@@ -40,6 +41,12 @@ export default function DriveAlongScreen() {
     return Object.fromEntries([...ids].map((id) => [id, true as const]));
   });
   const [sending, setSending] = useState(false);
+  const [convoy, setConvoy] = useState(true);
+  const prefs = useConvoyPrefs();
+  const routes = useDriveAlong((s) => s.routes);
+  const leader = session ? convoyLeader(session) : null;
+  const convoyCrewId = session ? convoyCrew(session, crews) : null;
+  const canLead = !!session && (session.owner === meId || leader === meId);
   const ui = driveAlongScreenState(session, meId, Object.keys(picked).length, !!dest, sending);
   const list = useMemo(() => Object.values(friends).sort((a, b) => a.profile.name.localeCompare(b.profile.name)), [friends]);
   const why = (id: string) => {
@@ -52,7 +59,7 @@ export default function DriveAlongScreen() {
   const send = async () => {
     if (!dest || sending) return;
     setSending(true);
-    await engine.companions.startDriveAlong(Object.keys(picked), p.crew ?? null, dest);
+    await engine.companions.startDriveAlong(Object.keys(picked), p.crew ?? null, dest, convoy);
     setSending(false);
     // Stay here: the member list shows Invited / Joined / Declined and every option stays editable.
     setPicked({});
@@ -90,6 +97,56 @@ export default function DriveAlongScreen() {
                   .map(([id, m]) => <Row key={id} label={m.name} value={t(`da.${m.state}`)} />)}
             {ui.shareRoute && <Toggle testID="da-share-route" label={t('da.shareRoute')} value={session.shareRoute} onChange={(v) => engine.companions.setShareRoute(v)} />}
           </Card>
+          {!!session.dest && (ui.shareRoute || !!leader) && (
+            <>
+              <SectionLabel>{t('cv.title')}</SectionLabel>
+              <Card style={{ paddingVertical: 0 }}>
+                {ui.shareRoute && <Toggle testID="cv-toggle" label={t('cv.title')} value={!!leader} onChange={(v) => void engine.companions.setConvoy(v, leader ?? meId)} />}
+                {!!leader &&
+                  Object.entries(session.members)
+                    .filter(([, m]) => m.state === 'joined')
+                    .map(([id, m]) => (
+                      <Row
+                        key={id}
+                        testID={`cv-member-${m.name}`}
+                        label={id === meId ? t('gd.you') : m.name}
+                        value={id === leader ? t('cv.leader') : canLead ? t('cv.makeLeader') : undefined}
+                        onPress={id !== leader && canLead ? () => void engine.companions.setConvoy(true, id) : undefined}
+                      />
+                    ))}
+              </Card>
+              {!!leader && leader !== meId && !!routes[leader] && (
+                <Button testID="cv-follow-screen" kind="secondary" icon="route" label={t('cv.follow', { name: session.members[leader]?.name ?? '' })} onPress={() => void engine.companions.followLeader()} />
+              )}
+              {!!leader && (
+                <>
+                  <SectionLabel>{t('cv.regroupAfter')}</SectionLabel>
+                  <Segmented
+                    testIDPrefix="cv-regroup-m-"
+                    options={CONVOY.regroupMChoices.map((m) => ({ key: String(m), label: formatDistance(m, lang()) }))}
+                    value={String(prefs.regroupM)}
+                    onChange={(v) => void patchConvoyPrefs({ regroupM: Number(v) })}
+                  />
+                  <Segmented
+                    testIDPrefix="cv-regroup-min-"
+                    options={CONVOY.regroupMinChoices.map((m) => ({ key: String(m), label: t('cv.minN', { n: m }) }))}
+                    value={String(prefs.regroupMin)}
+                    onChange={(v) => void patchConvoyPrefs({ regroupMin: Number(v) })}
+                  />
+                  {!!convoyCrewId && (
+                    <Card style={{ paddingVertical: 0 }}>
+                      <Toggle
+                        testID="cv-mute"
+                        label={t('cv.mute')}
+                        value={prefs.mutedCrews.includes(convoyCrewId)}
+                        onChange={(v) => void patchConvoyPrefs({ mutedCrews: v ? [...prefs.mutedCrews.filter((c) => c !== convoyCrewId), convoyCrewId] : prefs.mutedCrews.filter((c) => c !== convoyCrewId) })}
+                      />
+                    </Card>
+                  )}
+                </>
+              )}
+            </>
+          )}
           {ui.changeDest && (
             <Button testID="gd-change-dest" kind="secondary" icon="pin" label={t('gd.changeDest')} onPress={() => router.push('/search')} />
           )}
@@ -134,6 +191,9 @@ export default function DriveAlongScreen() {
                   />
                 );
               })}
+          </Card>
+          <Card style={{ paddingVertical: 0 }}>
+            <Toggle testID="cv-start-toggle" label={t('cv.title')} value={convoy} onChange={setConvoy} />
           </Card>
           <Button testID="da-start" label={t('gd.send')} icon="users" disabled={!ui.canSend && !sending} loading={sending} onPress={() => void send()} />
         </>

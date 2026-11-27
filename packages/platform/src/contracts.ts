@@ -134,7 +134,8 @@ export interface AudioService {
   /** `rate` (0.5-2) changes speed and pitch together (no pitch correction), for escalating layers. */
   playClip(uri: string, opts: { duckUnderVoice: boolean; volume?: number; rate?: number }): Promise<void>;
   /** Record up to `maxMs`; resolves with a file URI. */
-  record(maxMs: number): Promise<{ uri: string; durationMs: number; bytes: number }>;
+  /** Records up to maxMs; `onStart` fires the moment the microphone is really recording (the UI countdown starts there). */
+  record(maxMs: number, onStart?: () => void): Promise<{ uri: string; durationMs: number; bytes: number }>;
   stopRecording(): Promise<void>;
   micPermission(): Promise<PermissionState>;
   requestMic(): Promise<PermissionState>;
@@ -300,6 +301,23 @@ export interface MediaService {
   openSplit(pkg?: string): Promise<MediaOpenResult>;
 }
 
+// --- Trip memory photos (D68) --------------------------------------------------------------------------------------
+
+export interface CompressedPhoto {
+  /** file:// JPEG in the app cache. */
+  uri: string;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+export interface PhotoService {
+  /** Re-encodes an image (file:// or content://) to a JPEG with its longest edge ≤ maxEdge and ≤ maxBytes; EXIF rotation applied, metadata dropped. Null = unreadable. */
+  compress(uri: string, maxEdge: number, maxBytes: number): Promise<CompressedPhoto | null>;
+  /** Saves a local image to the gallery (Pictures/CrewMap) and opens the share sheet for it. */
+  share(uri: string, mime: 'image/png' | 'image/jpeg', title: string): Promise<boolean>;
+}
+
 export interface Platform {
   os: 'android' | 'ios';
   location: LocationService;
@@ -316,6 +334,7 @@ export interface Platform {
   navOverlay: NavOverlayService;
   externalNavStatus: ExternalNavStatusService;
   media: MediaService;
+  photos: PhotoService;
   /** libsodium implementation (JSI). */
   sodium: Sodium;
   /** WebRTC data-channel links for the router. */

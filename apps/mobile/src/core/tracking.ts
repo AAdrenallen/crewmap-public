@@ -25,9 +25,11 @@ import {
 import { cellKey, StayDetector, WalkTracker } from '@crewmap/shared/stats';
 import { lang, t } from '@crewmap/shared/i18n';
 import { formatDistance, formatKm } from '@crewmap/shared/units';
-import { utf8, type Presence } from '@crewmap/p2p';
+import { BATTERY_PUBLISH_GAP_MS, batteryChanged, utf8, type Presence } from '@crewmap/p2p';
 import * as db from './db';
-import { hasMapboxToken, matchMaxspeed, reverseCity } from './mapbox';
+import { hasMapboxToken, matchLimits, reverseCity } from './mapbox';
+import { budgetLevel, countSaved } from './apiBudget';
+import { LimitCache } from '@crewmap/shared/speedLimits';
 import type { Crews } from './crews';
 import { notify } from './notify';
 import { externalEta } from './externalStatus';
@@ -37,10 +39,13 @@ import { overlayShowing } from './overlay';
 import { useDriveAlong } from './companions';
 import { recordError } from './errorLog';
 import { headingToMe, type EtaView } from '@crewmap/shared/etaRefresh';
+import { checkInActivity, checkInCrash, checkInFix, startCheckIn } from './checkIn';
+import { forgetParkedFromTrip, parkingFix, parkingTick, parkingTripEnded, parkingTripStarted } from './parking';
 
 /** On-device route learning: drives of previewed routes (actual vs predicted) and the last preview. */
 export const DRIVE_SAMPLES_KEY = 'routeDrives';
 export const LAST_PREVIEW_KEY = 'routeLastPreview';
+const LIMIT_CACHE_KEY = 'limitCache.v1';
 
 /** Presence cadence by state while a friend has the app open (docs/BATTERY.md). */
 const PRESENCE_EVERY_MS: Record<SamplingProfile, number> = {
@@ -106,6 +111,8 @@ export class Tracking {
   private offlineTrail: [number, number, number][] = [];
   private recent: Fix[] = [];
   private lastLimitAt = 0;
+  private limits: Promise<LimitCache> | null = null;
+  private limitsSavedAt = 0;
   private stopImu: (() => void) | null = null;
   private offs: (() => void)[] = [];
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -126,6 +133,7 @@ export class Tracking {
   private tripStartFix: Fix | null = null;
   private drivingHomeSent = false;
   private battery = { level: null as number | null, charging: false };
+  private lastPresenceBat: { level: number | null; charging: boolean } | null = null;
   /** Phone-handling: unlocked + interactive while moving counts as touches every 2 s. */
   private unlockedSince: number | null = null;
 
@@ -149,6 +157,7 @@ export class Tracking {
       platform.location.onFixes((fixes) => void this.onFixes(fixes)),
       platform.motion.onActivity((a) => {
         this.pipeline.activity(a);
+        checkInActivity(a);
         useApp.getState().set({ activity: a.activity });
         void this.adaptProfile();
       }),
@@ -172,6 +181,7 @@ export class Tracking {
       this.net.onDemand(() => this.onDemand()),
     );
     this.battery = await platform.power.battery();
+    await startCheckIn(this.net, () => this.relevantPlaces(), () => this.beforeSend());
     this.gov.set('still', Date.now());
     await this.applyProfile('still', true);
     await this.registerGeofences();
@@ -340,6 +350,7 @@ export class Tracking {
       if (this.unlockedSince !== null && (f.speed ?? 0) >= 4.17 && !st.nav?.active)
         this.pipeline.interaction({ t: f.t, kind: 'touch' });
       for (const trip of this.pipeline.location(f, limit)) await this.onTripEnded(trip);
+      checkInFix(f);
       for (const e of this.arrivals.onFix(f)) await this.onArrival(e);
       const walk = this.walks.onFix(f, st.activity === 'walking' || st.activity === 'running');
       if (walk) await db.saveWalk(walk);
@@ -365,6 +376,7 @@ export class Tracking {
       this.checkDrivingHome(f);
     }
     const last = fixes[fixes.length - 1]!;
+    if (this.pipeline.state !== 'driving') parkingFix(last);
     rememberCenter(last);
     useApp.getState().set({ fix: last, driving: this.pipeline.state === 'driving' });
     if (this.profile === 'still' && !this.here && last.accuracy <= HERE_FENCE.radiusM)
@@ -376,6 +388,7 @@ export class Tracking {
 
   private tick(): void {
     for (const trip of this.pipeline.tick(Date.now())) void this.onTripEnded(trip);
+    parkingTick(Date.now());
     const fix = useApp.getState().fix;
     if (fix) void this.maybePresence(fix);
     void this.refreshEtas();
@@ -404,18 +417,46 @@ export class Tracking {
     return this.net.refreshEtas({ view, navEtaToMe });
   }
 
+  /** Posted limits per road cell (D60): filled by navigation routes and Map Matching, read before any request. */
+  private async limitCache(): Promise<LimitCache> {
+    this.limits ??= db.kvGet<unknown>(LIMIT_CACHE_KEY, []).then((v) => new LimitCache(v), () => new LimitCache());
+    return this.limits;
+  }
+
+  private saveLimits(cache: LimitCache, now: number): void {
+    if (now - this.limitsSavedAt < 5 * 60_000) return;
+    this.limitsSavedAt = now;
+    void db.kvSet(LIMIT_CACHE_KEY, cache.toJSON()).catch(() => undefined);
+  }
+
   private async maybeLimit(f: Fix): Promise<void> {
     const st = useApp.getState();
+    const cache = await this.limitCache();
     if (st.nav?.active) {
       // Every store set runs every subscriber: skip when unchanged (this runs per fix).
       const limitKph = st.nav.progress?.limitKph ?? null;
       if (limitKph !== st.limitKph) useApp.getState().set({ limitKph });
+      // The route's limits are free: remember them for drives without navigation.
+      cache.put(f, f.heading, limitKph, f.t);
+      this.saveLimits(cache, f.t);
       return;
     }
-    if (this.pipeline.state !== 'driving' || !hasMapboxToken() || f.t - this.lastLimitAt < 30_000) return;
+    if (this.pipeline.state !== 'driving' || !hasMapboxToken()) return;
+    const known = cache.get(f, f.heading, f.t);
+    if (known !== null && known !== st.limitKph) useApp.getState().set({ limitKph: known });
+    const level = budgetLevel('mapMatching');
+    const gap = level === 'ok' ? 30_000 : 90_000;
+    if (f.t - this.lastLimitAt < gap) return;
     this.lastLimitAt = f.t;
+    if (known !== null || level === 'off') {
+      if (known !== null) countSaved('mapMatching');
+      return;
+    }
     try {
-      useApp.getState().set({ limitKph: await matchMaxspeed(this.recent) });
+      const m = await matchLimits(this.recent);
+      for (const p of m.points) cache.put(p, p.heading, p.kph, f.t);
+      this.saveLimits(cache, f.t);
+      useApp.getState().set({ limitKph: m.last });
     } catch {
       // keep the previous limit
     }
@@ -436,7 +477,16 @@ export class Tracking {
     const moved =
       !this.lastPresencePos || haversineM(this.lastPresencePos, f) > Math.max(SIGNIFICANT_MOVE_M, f.accuracy);
     const every = (this.net.watched() ? PRESENCE_EVERY_MS : PRESENCE_UNWATCHED_MS)[this.profile];
-    if (now - this.lastPresenceAt < every && !(moved && now - this.lastPresenceAt > 15_000)) return;
+    // expo-battery's level listener only fires on BATTERY_LOW/OKAY on Android: read the level on each existing tick
+    // (one cheap system call, no extra wake-up) so a charge shows up and every presence carries the current reading.
+    this.battery = await platform.power.battery().catch(() => this.battery);
+    const batChanged = batteryChanged(this.lastPresenceBat, this.battery);
+    if (
+      now - this.lastPresenceAt < every &&
+      !(moved && now - this.lastPresenceAt > 15_000) &&
+      !(batChanged && now - this.lastPresenceAt > BATTERY_PUBLISH_GAP_MS)
+    )
+      return;
     const st = useApp.getState();
     const p: Presence = {
       lat: f.lat,
@@ -469,11 +519,13 @@ export class Tracking {
     }
     this.lastPresenceAt = now;
     this.lastPresencePos = f;
+    this.lastPresenceBat = { ...this.battery };
     await this.net.publishPresence(p).catch(() => undefined);
   }
 
   private onTripStarted(startedAt: number): void {
     this.tripStartFix = useApp.getState().fix;
+    parkingTripStarted(startedAt, this.tripStartFix);
     this.drivingHomeSent = false;
     useApp.getState().set({ tripStartedAt: startedAt, driving: true, liveEvents: [] });
     void this.adaptProfile();
@@ -482,8 +534,10 @@ export class Tracking {
   private onEvent(e: RiskyEvent): void {
     useApp.getState().set({ liveEvents: [...useApp.getState().liveEvents, e] });
     if (e.kind === 'crash') {
-      // Crash-like spikes alert only the owner of the phone; no auto-calling (F1).
-      void notify(t('notif.crash'), '', { channel: 'alerts', data: { type: 'crash' } });
+      // Crash-like spikes alert only the owner of the phone; no auto-calling (F1). Same id as the check-in ask (D66),
+      // which replaces it and tells the opted-in crew only if this stays unanswered.
+      void notify(t('notif.crash'), '', { channel: 'alerts', data: { type: 'crash' }, identifier: 'checkin' });
+      checkInCrash(e.t);
     }
   }
 
@@ -506,6 +560,7 @@ export class Tracking {
       });
     this.tripStartFix = null;
     void this.adaptProfile();
+    void parkingTripEnded(trip, this.myPlaces()).catch((e: unknown) => recordError('js', e));
     // Background only, and never while a new drive is already under way.
     if (AppState.currentState !== 'active' && this.pipeline.state !== 'driving' && trip.distanceM >= 200) {
       const dist = formatKm(trip.distanceM / 1000, lang());
@@ -521,6 +576,7 @@ export class Tracking {
     const next = markPassenger(trip, passenger);
     await db.setPassenger(trip.id, passenger, next.score);
     if (passenger) await db.deleteRouteTrace(trip.id);
+    if (passenger) forgetParkedFromTrip(trip.id);
     else await this.learnRoute(next);
     return next;
   }
@@ -533,7 +589,7 @@ export class Tracking {
     await db.saveRouteTrace(tr);
     // Actual vs predicted time when this trip drove a route of the preview that preceded it.
     const preview = await db.kvGet<PreviewRecord | null>(LAST_PREVIEW_KEY, null);
-    const sample = driveSample(tr, trip.startedAt, preview);
+    const sample = driveSample(tr, trip.startedAt, preview, undefined, trip.points);
     if (!sample) return;
     await db.kvSet(
       DRIVE_SAMPLES_KEY,

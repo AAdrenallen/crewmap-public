@@ -9,7 +9,7 @@ import { formatClock, formatKm, formatMinutes, formatSpeed } from '@crewmap/shar
 import { lang, t } from '@crewmap/shared/i18n';
 import * as db from '../../core/db';
 import { useApp } from '../../core/store';
-import { Bouncy, Card, Chip, Toast } from '../../ui/kit';
+import { Bouncy, Card, Chip, IconButton, Toast } from '../../ui/kit';
 import { dateLocale, Glyph, RouteThumb, scoreColor } from '../../ui/charts';
 import { useTheme } from '../../ui/theme';
 import { EmptyState } from '../../ui/screens-common/Layout';
@@ -139,7 +139,7 @@ export default function Trips() {
   return (
     <View style={{ flex: 1, backgroundColor: th.bg, paddingTop: insets.top + 8 }}>
       <View style={{ ...pageX(lay) }}>
-        <ScreenHeader title={t('trips.title')} />
+        <ScreenHeader title={t('trips.title')} right={<IconButton testID="trips-memories" icon="sparkle" tone="plain" label={t('mem.title')} onPress={() => router.push('/memories')} />} />
       </View>
       {trips === null ? (
         <Skeleton />

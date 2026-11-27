@@ -15,7 +15,7 @@ export type FinishId = (typeof FINISHES)[number];
 export const ANIMATED_FINISHES: readonly FinishId[] = ['rainbow', 'psychedelic', 'holo', 'galaxy', 'lava', 'glitch', 'neon'];
 
 /** Items that take a finish (`<item>Finish` on the avatar; `finish` on the ride paint). */
-export const FINISH_ITEMS = ['hair', 'top', 'bottom', 'shoes', 'hat', 'accessory'] as const;
+export const FINISH_ITEMS = ['hair', 'top', 'bottom', 'shoes', 'hat', 'accessory', 'glasses'] as const;
 export type FinishItem = (typeof FINISH_ITEMS)[number];
 export type FinishKey = `${FinishItem}Finish`;
 
@@ -28,7 +28,29 @@ export interface AvatarStyle {
   shoesFinish?: FinishId;
   hatFinish?: FinishId;
   accessoryFinish?: FinishId;
+  glassesFinish?: FinishId;
+  /** Optional second colour per item (trims, stripes, ties, bands); unset keeps each style's built-in trim colours. */
+  trim?: Partial<Record<TrimItem, string>>;
+  /** Optional lens colour (`#RRGGBB`) or `clear`; unset keeps each style's own lens. */
+  lens?: string;
 }
+
+/** Items with a second (trim) colour; shoes keep their palette slot `shoeColor2`. */
+export const TRIM_ITEMS = ['hair', 'top', 'bottom', 'hat', 'accessory'] as const;
+export type TrimItem = (typeof TRIM_ITEMS)[number];
+/**
+ * Styles that have trim pieces (`<slot>2_*` materials in avatar.glb; checked in tests). The trim colour field shows
+ * only for these, so the Look tab stays short.
+ */
+export const TRIM_STYLES: Record<TrimItem, readonly string[]> = {
+  hair: ['braids', 'bun', 'pigtails', 'ponytail', 'spaceBuns', 'topKnot'],
+  top: ['hoodie', 'jacket', 'jersey'],
+  bottom: ['jeans', 'chinos', 'cutoffs', 'kilt', 'bikeshorts', 'boardshorts', 'bootcut', 'capri', 'flares', 'harem', 'joggers', 'overalls', 'palazzo'],
+  hat: ['beanie', 'bucket', 'cowboy', 'headband', 'party', 'pirate', 'propeller', 'sombrero', 'topHat', 'tuque', 'viking', 'wizard'],
+  accessory: ['backpack', 'cape', 'chain', 'eyePatch', 'headphones'],
+};
+/** The see-through lens value. */
+export const CLEAR_LENS = 'clear';
 
 export interface CarStyle {
   /** Exact paint (the `color` field keeps the nearest palette entry for older builds). */
@@ -36,6 +58,8 @@ export interface CarStyle {
   /** Accent/trim colour. */
   accent?: string;
   finish?: FinishId;
+  /** Tint the ride's natural materials (bun, wooden deck, rug) with the paint; unset they keep their natural look. */
+  tint?: true;
 }
 
 export const finishKey = (item: FinishItem): FinishKey => `${item}Finish`;
@@ -109,6 +133,35 @@ export function withFinish(cfg: AvatarConfig, item: FinishItem, finish: FinishId
   return next;
 }
 
+export function trimOf(cfg: AvatarConfig, item: TrimItem): string | undefined {
+  return cfg.trim?.[item];
+}
+
+/** Config with an item's trim colour set (`null` restores the built-in trims). */
+export function withTrim(cfg: AvatarConfig, item: TrimItem, color: string | null): AvatarConfig {
+  const hex = normalizeHex(color);
+  const map = { ...cfg.trim };
+  if (hex) map[item] = hex;
+  else delete map[item];
+  const next = { ...cfg };
+  if (Object.keys(map).length) next.trim = map;
+  else delete next.trim;
+  return next;
+}
+
+export function normalizeLens(v: unknown): string | undefined {
+  return v === CLEAR_LENS ? CLEAR_LENS : (normalizeHex(v) ?? undefined);
+}
+
+/** Config with a lens colour, `clear`, or `null` for the style's own lens. */
+export function withLens(cfg: AvatarConfig, lens: string | null): AvatarConfig {
+  const v = normalizeLens(lens);
+  const next = { ...cfg };
+  if (v) next.lens = v;
+  else delete next.lens;
+  return next;
+}
+
 /**
  * Canonical style fields of a stored avatar (fixed key order, `none` and redundant hexes dropped), so equal looks
  * hash to one sprite sheet. `cfg` is the already-normalised palette part.
@@ -126,6 +179,15 @@ export function normalizeStyle(raw: Record<string, unknown>, cfg: AvatarConfig):
     const f = normalizeFinish(raw[finishKey(item)]);
     if (f !== 'none') out[finishKey(item)] = f;
   }
+  const rawTrim = raw.trim && typeof raw.trim === 'object' ? (raw.trim as Record<string, unknown>) : {};
+  const trim: Partial<Record<TrimItem, string>> = {};
+  for (const item of TRIM_ITEMS) {
+    const h = normalizeHex(rawTrim[item]);
+    if (h) trim[item] = h;
+  }
+  if (Object.keys(trim).length) out.trim = trim;
+  const lens = normalizeLens(raw.lens);
+  if (lens) out.lens = lens;
   return out;
 }
 
@@ -144,7 +206,17 @@ export function withCarColor(car: CarConfig, color: string): CarConfig {
 }
 
 /** Rides whose kit node has an `accent` material (plates, pinstripes, fins, ...); checked against cars.glb in tests. */
-export const RIDES_WITH_ACCENT: readonly string[] = ['compact', 'hatchback', 'pickup', 'suv', 'sports', 'van', 'convertible', 'motorcycle', 'skateboard', 'rocket', 'carpet'];
+export const RIDES_WITH_ACCENT: readonly string[] = ['compact', 'hatchback', 'pickup', 'suv', 'sports', 'van', 'convertible', 'motorcycle', 'hotdog', 'skateboard', 'scooter', 'rocket', 'cart', 'bathtub', 'carpet'];
+/** Rides with natural `paint_*` materials (checked against cars.glb in tests): they offer a Natural paint choice. */
+export const RIDES_NATURAL: readonly string[] = ['hotdog', 'skateboard', 'carpet'];
+
+/** Natural look (`false`) or tinted by the paint (`true`). Picking a paint colour turns the tint on. */
+export function withCarTint(car: CarConfig, tint: boolean): CarConfig {
+  const next = { ...car };
+  if (tint) next.tint = true;
+  else delete next.tint;
+  return next;
+}
 
 export function withCarAccent(car: CarConfig, color: string | null): CarConfig {
   const next = { ...car };
@@ -170,6 +242,7 @@ export function normalizeCarStyle(raw: Record<string, unknown>, color: CarConfig
   if (accent) out.accent = accent;
   const finish = normalizeFinish(raw.finish);
   if (finish !== 'none') out.finish = finish;
+  if (raw.tint === true) out.tint = true;
   return out;
 }
 

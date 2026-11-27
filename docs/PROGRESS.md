@@ -103,3 +103,122 @@ nested SQLite transactions; R8 missing WebRTC class; Windows long paths (CMake 3
 - Open: OSM `change:lanes` solid/dashed markings (Overpass unreachable from build PC); quip image compression (needs expo-image-manipulator + native rebuild); battery window + perf snapshot not re-run; crew sheet inner-list drag.
 - Build notes: android/ is prebuilt for the preview variant; re-prebuild without APP_VARIANT for the dev client. Release builds: `--max-workers=3`, `CMAKE_BUILD_PARALLEL_LEVEL=4` (OOM otherwise).
 - Invite sharing — one-link invites (D50): share text = crew name + https join-page link; `site/join` page (auto-open via intent, Install = rolling `preview` APK + copies the invite); clipboard pickup in onboarding with one-tap "Join {crew}?"; both link forms accepted (paste, QR, deep link); `tools/release/publish-preview.sh`, `tools/release/publish-site.sh`. Needs a native rebuild (expo-clipboard, https intent filter) and Pages enabled.
+- Two-colour looks (D54): optional trim colour for hair/top/bottom/hat/extra (shown only for styles with trims), glasses
+  frame finish + lens colour with Natural/Clear (dark lenses strong, light/clear soft tint, clear lenses added to open
+  frames), ride accent on every ride and Natural/tinted paint for hot dog, skateboard and carpet; cart basket and
+  scooter stem take the paint. Vitest: `shared/test/avatarStyle.test.ts` (glb material checks), `avatar3d/looks.test.ts`.
+  Unverified on device: lens transparency in the live stage and baked sprites, tint strengths.
+
+- 2026-11-26 Battery staleness fix: friend's battery stuck at an old value while "updated 1 min ago". The sender only refreshed battery from expo-battery listeners (Android level listener fires only on BATTERY_LOW/OKAY), so each presence carried the level from the last charger plug event; receivers merging several crews took battery from the most precise (possibly older) presence. Now each presence tick reads the battery (no extra wake-up), a >=2 % step or charger flip publishes early (max once per 60 s), out-of-cadence presences carry the real battery instead of null, and `mergePresence` takes battery from the newest reading.
+- 2026-11-26 Crew clusters (D55): overlapping friend markers merge into a count cluster; tap fits them (max zoom 19), at max zoom a list sheet (`cluster-list`, `cluster-row-<id>`) opens the usual crewmate screen; members within 25 m show a group scene from a generated 100+ pose library (`shared/src/groupPoses.ts`, `crewCluster.ts`, tests). Unverified on device: visuals, getPointInView units, tap feel.
+- 2026-11-26 Per-friend sharing cleanup (D56): Same as crew | Custom segmented (`share-user-mode-crew/custom`),
+  summary rows (`share-user-sum-*`), Custom reuses the crew screen's `ShareFields` (`share-user-loc-*`,
+  `share-user-<flag>`, `share-user-vis-*`). Stats + per-group toggles overridable per friend; `statsAllowed` helper for
+  the stats aggregate. Vitest: `p2p/test/shareSummary.test.ts`. Unverified on device: layout, light/dark, landscape.
+- 2026-11-26 Stats tab + leaderboard (D57): top You | Leaderboard switch (`stats-view-you/board`) above week/month/all.
+  You: headline cards for km driven / walked in the period (`stat-driven`, `stat-walked`), streak demoted to a minor line
+  (data kept), measured fixed-size grid and badge cells (no % overflow, 2-line badge labels, landscape 4 cols / up to
+  6 badge cols). Leaderboard: 11 category cards (`board-cat-<id>`, rows `board-<id>-<rank|me>`) ranking top 3 + me from
+  `stats-agg` (protocol 9, cap `statsAgg`), sealed per friend, groups gated by `statsAllowed`; new `home` visibility
+  group (default off). Vitest: `shared/test/stats-aggregate.test.ts`, `p2p/test/statsAgg.test.ts`. Unverified on
+  device: all visuals, light/dark, small screens, real cross-phone delivery. Demo peers send no aggregates.
+
+## Emotes: pings, quick picks, catch-up fanfare (D58, 2026-11-26)
+Picker scroll fixed (single scroller in the sheet), Recent as a chip row, 7 backward-compatible pings, context quick
+picks, favourites/pins, bursts, streak chip; per-sender collapsed notifications with Send back + 2 ping actions;
+catch-up cards with confetti at the app root. Logic + tests in `packages/shared/src/emoteSuggest.ts`. Unverified on a
+device: sheet scrolling/landscape, visuals, audio, notification actions from a killed app (listener lives in RootLayout).
+
+## Route chooser quality (D59, 2026-11-26)
+Alternatives drawn each in their own colour (were near-black: Standard lighting at dusk/night), colour chip + tags +
+"+N min" on cards. Discovery adds two corridor probes (point exclusion on the fastest route, "stay on the highway"
+via), splits only from plausible routes, end-only variants capped at one, a motorway slot; ranking cost adds
+local-street / collector / left-turn / closure / hazard penalties (ETA unchanged) and stops slower routes winning on
+1–2 fewer lights; reroutes use the same ranking. Corridor labels ("A-n, A-m") with local ref style, never the end
+streets. Camera fits keep ≥ 300 m and ≤ zoom 17.5. Hazards for the opposite direction are ignored. Vitest:
+`shared/test/routing.test.ts`, `hazards/test/direction.test.ts`, `mobile/src/ui/map/routeColors.test.ts`. Checked
+against live Directions responses for a real regional trip at four departure times (motorway corridor now always in
+the set; labels name the corridors). Unverified on the phone: colours by day/night, card layout, fit feel.
+
+## Routing efficiency work (resume notes, 2026-11-26)
+Done (D60, uncommitted parts committed as WIP where noted; Vitest green: `shared/test/etaBias.test.ts`, `apiBudget.test.ts`, discovery-mode block in `routing.test.ts`):
+- A ETA truth: road-group bias model (`packages/shared/src/navigation/etaBias.ts`), recommend integration (risk, no-live-data cost, leave-highway rule, habit drives from `db.routeTraces()` joined with trip start, leg-trimmed preview samples). Wired into preview, reroute and re-evaluation (`apps/mobile/src/core/nav.ts`).
+- B tokens: `apiBudget.ts` (shared + `apps/mobile/src/core/apiBudget.ts`, counted in `mapbox.ts getJson`), 4-min route result cache, full/warm/lean discovery, speed-limit cache in `tracking.ts maybeLimit`, search cache. Expected: repeat search of a known O/D 1–4 calls instead of ≤ 10, re-open 0; non-navigated drive Map Matching ≈ 120/h → near 0 on repeated roads.
+Half-done / next steps:
+- Publish own multipliers: call `StatsAggChannel.setEtaBias(crewBiasOf(fitClassModels(sampleObs(samples))))` from `crews.ts pushAggs` (receiving side done: `core/etaTruth.ts`, in memory only; persist it in kv).
+- Diagnostics screen: show `useApiBudget` days (used / saved per API) in `app/settings/diagnostics.tsx` with i18n keys (en, fr).
+- C not started: optional self-hosted OSRM on the relay (OSRM JSON parses with `parseMapboxRoute`; use it for probes/splits, Mapbox only for the shortlisted 1–2 routes: ≈ 3 Mapbox calls per cold search); Ontario 511 / Environment Canada alerts adapters (read their terms first); crowd "still there" already exists (votes, announcer confirm).
+- Not verified on a phone. Tune `ETA_BIAS.leaveHighway` / `unknownLive` after real drives.
+Owner decisions: disk/CPU for an OSRM Québec+Ontario extract on the home PC (~1 GB download, several GB processed); per-phone daily caps in `API_BUDGET`.
+- 2026-11-26 D60 follow-ups done: own ETA multipliers published with stats aggregates (`crews.ts refreshEtaBias`), received biases persisted in kv (`core/etaTruth.ts`), Diagnostics shows today's API calls used / saved. Still open: C (OSRM on relay, Ontario 511 / Environment Canada adapters), phone verification.
+- 2026-11-26 D62: Waze Live Map adapter re-enabled on owner request (supersedes D40); live-map smoke test on phone still unverified.
+
+## D61 — OSM cameras + Montréal no-right-on-red (2026-11-27)
+- Done: `osm` HazardSource (Overpass, weekly 0.5° cell cache, backoff, persisted, cache read on every phone); right
+  turns at signals on the island of Montréal priced 8 s in ranking. Typecheck, lint, tests green.
+- Unverified on device: Overpass reachability from the phone, cell persistence across restarts, camera markers/alerts
+  for `osm` cameras in Ontario. Rejected: Ontario 511 (key + terms behind login), ECCC alerts (deferred, polygons).
+
+## D63 — Crew-sensor insights (2026-11-27)
+- Done: road roughness/pothole cells, learned stop delays, leave-by in `packages/shared/src/insight/` with tests. Source sweep + ideas backlog in RESEARCH.md.
+- Not wired into the app; thresholds untuned on real drives.
+
+## D64 — Free map-point feeds, official Québec fuel prices (2026-11-27)
+- Done: Régie essence Québec station prices (chore peer, 10 min, conditional GET, kv cache, shared as `pois`), MTMD
+  traffic cameras (weekly, link to the Québec 511 viewer), OSM fuel + chargers (shared Overpass cell cache, 30 days),
+  optional Open Charge Map (needs `OCM_API_KEY`), map layer + point sheet with price / grade / age + credits, fuel search
+  (grade chips, cheapest / nearest), Diagnostics counters. Typecheck, lint, tests green.
+- Unverified on device: gzip GeoJSON decode via RN fetch, kv size of the province snapshot (~600 kB JSON), pins and
+  labels at zoom, formSheet layout, Linking to the 511 viewer, `pois` sharing between phones, OCM with a real key.
+- Owner to confirm: reuse of the Régie file (no licence text published; see D64).
+
+## D70 — Road-weather warnings + free trip feeds (2026-11-27)
+- Done: ECCC alerts + MTMD conditions as a once-per-zone route warning (voice, haptic, banner, credit); CBSA border
+  waits on routes through QC/ON ports; Wikipedia card on the place sheet. Vitest: `hazards/test/roadWeather.test.ts`,
+  `hazards/test/info.test.ts`.
+- Unverified on a phone: banner placement/landscape, spoken wording en/fr/ru, ECCC fetch from the phone, place card.
+
+## D67 — Where did I park (2026-11-27)
+- Done: `packages/shared/src/parking/` (classification, session reducer, Overpass query/parse, walking route, share
+  text) with Vitest (`shared/test/parking.test.ts`, fixtures `parking-street|driveway|lot.json`: synthetic Overpass
+  around public landmarks) and replay (`tools/replay/src/runParking.ts`, `test/parking.test.ts`: street park saved,
+  home driveway skipped, parking lot saved, drive away clears, sync-payload privacy). App: `core/parking.ts`,
+  tracking hooks, `ui/map/ParkedCar.tsx`, `app/parked.tsx`, settings rows, `parked` notification route.
+- Unverified on a phone: parked-car sprite bake and look (light/dark, landscape), sheet layout, Overpass from the
+  phone, walk line, notification from background, real driveway/street classification quality.
+
+## D66 — Ambient safety check-in (2026-11-27)
+- Done: pure monitor + stop assessment + Overpass count lookup (`packages/shared/src/safety/`), opt-in per crew / per
+  friend (`checkIn` on policy and override, `checkInAllowed`), `check-in` sealed kind, app service
+  `apps/mobile/src/core/checkIn.ts` wired from `tracking.ts` (fixes, activity, crash) and `engine.ts` (receiver, also on
+  headless wake), "I'm OK" notification action + in-app card, friend-screen alert banner, wait setting, opt-in switch in
+  onboarding / new crew / join. Vitest: `shared/test/checkIn.test.ts`, `p2p/test/checkInShare.test.ts`,
+  `mobile/src/core/checkInNotif.test.ts`, `tools/replay/test/checkIn.test.ts`.
+- Unverified on a phone: timer firing while still with the screen off (Doze), notification button from the lock screen,
+  card look in light/dark/landscape, Overpass from the phone, real cross-phone delivery, false-positive rate on real
+  drives (tune `CHECK_IN` thresholds). Maestro flows that join by link now see one more screen (`join-continue`).
+
+## D65 — Convoy mode (2026-11-27)
+- Done: `shared/companions/convoy.ts` (tracker, order, along-route distance/time gaps, lights, callouts, regroup watch,
+  follow line, crew-for-mute, arrival gaps), `convoy` op + leader rules in `session.ts`, `NavRoute.signalsAlongM`.
+  App: `core/companions.ts` (convoy loop, leader route share, follow), `core/convoyPrefs.ts`, strip order badges +
+  regroup banner (`ui/drive/Companions.tsx`), follow pill + "+N min" summary (`GroupDrive.tsx`), convoy section on
+  `/drive-along`, order on map name chips. Vitest `shared/test/convoy.test.ts`; replay `tools/replay/test/convoy.test.ts`
+  (3 cars over the simulated relays: order, ~20 s time gap, exactly one regroup alert on leader + car ahead).
+- Unverified on a phone: follow route quality (via-constrained Directions), callout wording/timing en/fr/ru, strip and
+  banner layout in landscape, map chip order, two real phones' clocks (time gaps use sender fix times).
+- Seen in the simulator: with direct links enabled (`SimDirectNet` natSuccess 1 or default 0.55) one pair of phones
+  sometimes never received the other's `presence-live`; relays-only delivers. Worth a look in the direct-link path.
+
+## D68 — Trip memories (2026-11-27)
+- Done: grouping/highlights/playback/season logic in `packages/shared/src/memories` (Vitest `shared/test/memories.test.ts`,
+  public Montréal landmarks), sealed per-member wire + photo chunks in `packages/p2p/src/memories.ts` (Vitest
+  `p2p/test/memories.test.ts`), `platform.photos` (Kotlin `PhotoTools.kt`: compress + MediaStore share), app service
+  `core/memories.ts` (records crewmate fixes / emotes while driving, rebuilds outings at trip end, sends recap, photos,
+  reactions), screens `/memories`, `/memories/[id]`, `/memories/season`, `/memories/camera`, root `RecapCard`, Drives
+  header entry `trips-memories`. i18n en/fr/ru. DB migration 5 (mem_tracks, mem_events, memories).
+- Needs a new dev client build (Kotlin `photoCompress` / `photoShare`).
+- Unverified on a phone: playback smoothness with several MarkerViews, svg `toDataURL` output (fonts/emoji in the
+  card), MediaStore share sheet, camera capture + compression sizes, two-phone delivery of posts/photos/reactions,
+  recap card timing after a real group drive, light/dark/landscape layouts.
+- UI review: structure, i18n parity (72 mem keys en/fr/ru), a11y, playback controls already fine; added success haptic on RecapCard appear.

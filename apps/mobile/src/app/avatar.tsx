@@ -51,6 +51,7 @@ export default function AvatarEditor() {
           <PartTabs tabs={MODES} active={mode} onPick={setMode} testPrefix="avatar" />
           {!showCar && <PartTabs tabs={PART_TABS} active={tab} onPick={setTab} testPrefix="avatar" />}
         </View>
+        <View style={{ height: StyleSheet.hairlineWidth * 2, marginHorizontal: 16, backgroundColor: th.border }} />
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12, gap: 16 }}>
           {showCar ? (
             <Animated.View key="car" entering={FadeIn.duration(180)}>

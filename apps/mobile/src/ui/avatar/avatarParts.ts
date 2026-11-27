@@ -1,4 +1,4 @@
-import { AVATAR_PARTS, type AvatarConfig, type AvatarPartKey, type CarModel } from '@crewmap/shared/avatar';
+import { AVATAR_PARTS, TRIM_STYLES, type AvatarConfig, type AvatarPartKey, type CarModel, type TrimItem } from '@crewmap/shared/avatar';
 import type { IconName } from '../kitIcons';
 
 /**
@@ -12,23 +12,35 @@ export interface PartGroup {
   color?: AvatarPartKey;
   /** Second colour of the same item (shoe soles, laces and trims). */
   color2?: AvatarPartKey;
+  /** Optional trim colour (bands, stripes, ties), shown only for styles that have trims. */
+  trim?: TrimItem;
+  /** Lens colour with a clear option (glasses). */
+  lens?: true;
 }
 
 export const PART_GROUPS: readonly PartGroup[] = [
-  { tab: 'hair', style: 'hair', color: 'hairColor' },
+  { tab: 'hair', style: 'hair', color: 'hairColor', trim: 'hair' },
   { tab: 'face', style: 'face' },
   { tab: 'body', style: 'body', color: 'skin' },
-  { tab: 'top', style: 'top', color: 'topColor' },
-  { tab: 'bottom', style: 'bottom', color: 'bottomColor' },
+  { tab: 'top', style: 'top', color: 'topColor', trim: 'top' },
+  { tab: 'bottom', style: 'bottom', color: 'bottomColor', trim: 'bottom' },
   { tab: 'shoes', style: 'shoes', color: 'shoeColor', color2: 'shoeColor2' },
-  { tab: 'hat', style: 'hat', color: 'hatColor' },
-  { tab: 'glasses', style: 'glasses', color: 'glassesColor' },
-  { tab: 'accessory', style: 'accessory', color: 'extraColor' },
+  { tab: 'hat', style: 'hat', color: 'hatColor', trim: 'hat' },
+  { tab: 'glasses', style: 'glasses', color: 'glassesColor', lens: true },
+  { tab: 'accessory', style: 'accessory', color: 'extraColor', trim: 'accessory' },
 ];
 
 export function groupOf(tab: AvatarPartKey): PartGroup {
   return PART_GROUPS.find((g) => g.tab === tab) ?? PART_GROUPS[0]!;
 }
+
+/** Whether the chosen style of a trim item has trim pieces to paint. */
+export function hasTrim(cfg: AvatarConfig, item: TrimItem): boolean {
+  return TRIM_STYLES[item].includes(String(cfg[item]));
+}
+
+/** Whether the chosen glasses have lenses (pixel shades are solid blocks in the frame colour; tested against avatar.glb). */
+export const hasLens = (cfg: AvatarConfig): boolean => cfg.glasses !== 'none' && cfg.glasses !== 'pixel';
 
 export function partOptions(key: AvatarPartKey): readonly string[] {
   return AVATAR_PARTS[key] as readonly string[];

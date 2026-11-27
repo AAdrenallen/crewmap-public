@@ -1,8 +1,8 @@
-import type { HazardSourceId, HealthStatus, SourceHealth } from './types';
+import type { FeedSourceId, HealthStatus, SourceHealth } from './types';
 
 export interface HealthLogEntry {
   t: number;
-  source: HazardSourceId;
+  source: FeedSourceId;
   from: HealthStatus;
   to: HealthStatus;
   detail: string;
@@ -13,7 +13,7 @@ export class HealthTracker {
   private h: SourceHealth;
   private readonly listeners = new Set<(e: HealthLogEntry) => void>();
 
-  constructor(source: HazardSourceId) {
+  constructor(source: FeedSourceId) {
     this.h = { source, status: 'ok', lastOkAt: null, lastAttemptAt: null, consecutiveFailures: 0, lastError: null, lastHttpStatus: null };
   }
 

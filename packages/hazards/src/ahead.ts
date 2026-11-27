@@ -1,4 +1,4 @@
-import { polylineChunks, projectNearPolyline, projectOnPolyline, type LatLng, type PolylineChunks } from '@crewmap/shared/geo';
+import { angleDiffDeg, bearingDeg, pointAlong, polylineChunks, projectNearPolyline, projectOnPolyline, type LatLng, type PolylineChunks } from '@crewmap/shared/geo';
 import type { ConfidenceLevel } from './confidence';
 import type { NavRoute } from '@crewmap/shared/navigation';
 import type { MergedHazard } from './merge';
@@ -19,6 +19,11 @@ export const ALERT_THRESHOLDS = {
   confirmWindowM: [10, 120] as const,
   /** Never ask while the next maneuver is this close. */
   noPromptNearManeuverM: 200,
+  /**
+   * A report with a known travel direction (Waze `magvar`, a friend's heading) differing from the route's direction by
+   * more than this is for the other carriageway / the opposite direction: not on our route.
+   */
+  oppositeDeg: 120,
 };
 
 export const ANNOUNCED_TYPES: HazardType[] = ['police', 'speedTrap', 'camera', 'accident', 'hazard', 'closure', 'pothole'];
@@ -68,9 +73,22 @@ export function hazardsOnRoute(route: NavRoute, hazards: MergedHazard[]): Hazard
       if (q.distanceM <= ALERT_THRESHOLDS.corridorM + h.uncertaintyM) p = q;
     }
     if (!p) continue;
+    if (!sameDirection(route, p.alongM, h.heading)) continue;
     out.push({ hazard: h, alongM: p.alongM });
   }
   return out.sort((a, b) => a.alongM - b.alongM);
+}
+
+/** Route direction (deg) at an along-route position, from ±25 m of geometry. */
+export function routeBearingAt(route: Pick<NavRoute, 'geometry' | 'cum'>, alongM: number): number {
+  const total = route.cum[route.cum.length - 1] ?? 0;
+  return bearingDeg(pointAlong(route.geometry, route.cum, Math.max(0, alongM - 25)), pointAlong(route.geometry, route.cum, Math.min(total, alongM + 25)));
+}
+
+/** A report applies to our direction of travel (unknown heading: yes). */
+export function sameDirection(route: Pick<NavRoute, 'geometry' | 'cum'>, alongM: number, heading: number | null): boolean {
+  if (heading === null || !Number.isFinite(heading) || route.geometry.length < 2) return true;
+  return Math.abs(angleDiffDeg(heading, routeBearingAt(route, alongM))) <= ALERT_THRESHOLDS.oppositeDeg;
 }
 
 export type AheadAction =

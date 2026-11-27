@@ -25,7 +25,10 @@ import { palette, useTheme } from '../../ui/theme';
 import { Group, ListRow, SwitchRow } from '../../ui/screens-common/Layout';
 import { ScreenHeader } from '../../ui/kit';
 import { ConfirmSheet } from '../../ui/ConfirmSheet';
+import { CHECK_IN } from '@crewmap/shared/safety';
 import { useDeveloperVisible, useVersionTap } from '../../ui/shell/devGate';
+import { PARKING } from '@crewmap/shared/parking';
+import { loadParking, setParkingPrefs, useParking } from '../../core/parking';
 
 const LANGS: { key: Lang; label: string }[] = [
   { key: 'en', label: 'English' },
@@ -40,6 +43,10 @@ export default function Settings() {
   const th = useTheme();
   const s = useApp((x) => x.settings);
   const set = (p: Parameters<typeof engine.saveSettings>[0]) => void engine.saveSettings(p);
+  const parking = useParking((x) => x.prefs);
+  useEffect(() => {
+    void loadParking().catch(() => undefined);
+  }, []);
   const devVisible = useDeveloperVisible();
   const versionTap = useVersionTap();
   const version = Constants.expoConfig?.version ?? '';
@@ -186,6 +193,16 @@ export default function Settings() {
               ]}
             />
           </View>
+          {/* Safety check-in (D66): who is told is per crew / per friend; here only how long a remote stop lasts first. */}
+          <View style={styles.inset}>
+            <Text style={[styles.inLabel, { color: th.textSoft }]}>{`${t('checkIn.title')} · ${t('checkIn.wait')}`}</Text>
+            <Segmented
+              testIDPrefix="checkin-wait-"
+              value={String(s.checkInWaitMin)}
+              onChange={(v) => set({ checkInWaitMin: Number(v) })}
+              options={CHECK_IN.waitChoicesMin.map((m) => ({ key: String(m), label: t('checkIn.min', { n: m }) }))}
+            />
+          </View>
           <SwitchRow
             icon="volume"
             tint={palette.pop}
@@ -211,7 +228,19 @@ export default function Settings() {
           <SwitchRow testID="set-hide-previews" icon="lock" tint={palette.pop} label={t('set.hidePreviews')} value={s.hideChatPreviews} onChange={(v) => set({ hideChatPreviews: v })} />
           <SwitchRow testID="set-anon-publish" icon="warning" tint={palette.warn} label={t('set.anonPublish')} value={s.anonPublish} onChange={(v) => set({ anonPublish: v })} />
           <SwitchRow testID="set-anon-receive" icon="warning" tint={palette.warn} label={t('set.anonReceive')} value={s.anonReceive} onChange={(v) => set({ anonReceive: v })} />
+          <SwitchRow testID="set-map-pois" icon="flame" tint={palette.pop} label={t('set.mapPois')} value={s.mapPois} onChange={(v) => set({ mapPois: v })} />
           <SwitchRow testID="set-auto-faster" icon="volume" tint={palette.pop} label={t('set.autoFaster')} value={s.autoSwitchFaster} onChange={(v) => set({ autoSwitchFaster: v })} />
+          <SwitchRow testID="set-parking" icon="car" tint={palette.brand} label={t('set.parking')} value={parking.enabled} onChange={(v) => void setParkingPrefs({ enabled: v })} />
+          {parking.enabled && (
+            <View style={styles.inset}>
+              <Text style={[styles.inLabel, { color: th.textSoft }]}>{t('set.parkingForget')}</Text>
+              <Segmented
+                value={String(parking.forgetAfterH)}
+                onChange={(v) => void setParkingPrefs({ forgetAfterH: Number(v) })}
+                options={PARKING.forgetAfterOptionsH.map((h) => ({ key: String(h), label: h === 0 ? t('park.untilDrive') : t('park.hours', { n: h }) }))}
+              />
+            </View>
+          )}
           <SwitchRow
             icon="warning"
             tint={palette.warn}

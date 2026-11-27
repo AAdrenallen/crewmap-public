@@ -3,12 +3,13 @@ import { File, Paths } from 'expo-file-system';
 import { platform } from '@crewmap/platform';
 import { b64, concat, fromUtf8, sodium, splitLegacySharing, unb64, utf8, type DeviceIdentity, type LegacySharingSettings, type RelayPool } from '@crewmap/p2p';
 import { setLang } from '@crewmap/shared/i18n';
-import { ALL_VISIBLE, computeStats, shareableStats } from '@crewmap/shared/stats';
+import { ALL_VISIBLE, aggregateFor, computeStats, shareableStats } from '@crewmap/shared/stats';
 import { needsMigration, normalizePlace, type Place, type RawPlace } from '@crewmap/shared/places';
 import { deleteIdentity, loadOrCreateIdentity } from './circle';
 import { Chat } from './chat';
 import { useAsks } from './asksStore';
 import { Asks } from './asks';
+import { Memories, wipeMemoryPhotos } from './memories';
 import { Companions, useDriveAlong } from './companions';
 import { Crews } from './crews';
 import { createRelayPool } from './relayPool';
@@ -18,7 +19,9 @@ import { Hazards } from './hazards';
 import { Navigator } from './nav';
 import { useApp, type Profile, type Settings } from './store';
 import { Tracking } from './tracking';
+import { startCheckInReceiver } from './checkIn';
 import { loadLastCenter } from './lastCenter';
+import { loadApiBudget } from './apiBudget';
 
 /** Radio governor: linger before closing (late acks, a quick re-open of the app), and a wake window's length. */
 const RADIO_LINGER_MS = 180_000;
@@ -41,6 +44,7 @@ class Engine {
   chat!: Chat;
   companions!: Companions;
   asks!: Asks;
+  memories!: Memories;
   private places: Place[] = [];
   private booted: Promise<void> | null = null;
   private running = false;
@@ -60,6 +64,7 @@ class Engine {
     await db.openDb();
     this.me = await loadOrCreateIdentity();
     await loadLastCenter();
+    void loadApiBudget();
     // D52: the old global stats visibility / per-friend precision move into the crews (crews.load), then leave settings.
     const { settings, legacy: legacySharing } = splitLegacySharing(await db.kvGet<Partial<Settings> & LegacySharingSettings>('settings', {}));
     useApp.getState().patchSettings(settings);
@@ -81,6 +86,7 @@ class Engine {
     this.emotes = new Emotes(this.net);
     this.chat = new Chat(this.crews, this.me);
     this.asks = new Asks(this.crews, this.me);
+    this.memories = new Memories(this.crews, () => this.me.deviceId);
     this.companions = new Companions(
       this.crews,
       this.me,
@@ -94,6 +100,12 @@ class Engine {
         } catch {
           return false;
         }
+      },
+      // Convoy (D65): drive a route already fetched (the leader's line), replacing any current navigation.
+      (dest, route) => {
+        if (useApp.getState().nav?.active) this.nav.end();
+        useApp.getState().set({ nav: { route, candidates: [{ route, source: 'base', label: { kind: 'letter', letter: '' } }], destination: dest, progress: null, active: false, rerouting: false } });
+        this.nav.start();
       },
     );
     useApp.getState().set({
@@ -120,6 +132,8 @@ class Engine {
     this.chat.start();
     this.companions.start();
     this.asks.start();
+    this.memories.start();
+    startCheckInReceiver(this.crews, this.me);
     this.net.doc.onChange(() => useApp.getState().set({ places: this.allPlaces() }));
     void this.hazards.start().catch((e: unknown) => {
       if (__DEV__) console.warn('hazards start failed', e);
@@ -128,6 +142,10 @@ class Engine {
     await this.crews.rotateIfStale();
     await this.maintenance();
     this.purgeTimer = setInterval(() => void this.maintenance(), 6 * 3600_000);
+    // A saved drive (the store clears tripStartedAt after saving) refreshes the stats; senders skip unchanged ones.
+    this.radioOffs.push(useApp.subscribe((st, prev) => {
+      if (prev.tripStartedAt !== null && st.tripStartedAt === null) void this.publishStats();
+    }));
     this.tracking.onProfileChange = () => this.governRadio();
     this.tracking.beforeSend = () => this.radioWindow();
     const sub = AppState.addEventListener('change', () => this.governRadio());
@@ -201,6 +219,7 @@ class Engine {
     this.chat.stop();
     this.companions.stop();
     this.asks.stop();
+    this.memories.stop();
     this.crews.stop();
     await this.tracking.stop().catch(() => undefined);
     if (this.purgeTimer) clearInterval(this.purgeTimer);
@@ -213,14 +232,22 @@ class Engine {
     const s = useApp.getState().settings;
     await db.purgeOlderThan(s.retentionDays, Date.now());
     await this.chat.refreshUnread();
+    await this.publishStats();
+    void this.memories.maintenance();
+  }
+
+  /** Stats summary into the crew docs, plus the leaderboard aggregate sealed per friend (D57). */
+  private async publishStats(): Promise<void> {
     const me = useApp.getState().me;
     if (!me || !this.net.router) return;
     const input = { trips: await db.tripSummaries(), walks: await db.walks(), visits: await db.visits() };
     const now = Date.now();
-    const stats = Object.fromEntries(
-      (['week', 'month', 'all'] as const).map((p) => [p, shareableStats(computeStats(input, p, now, tzOffsetMin()), ALL_VISIBLE, now)]),
-    );
+    const tz = tzOffsetMin();
+    const periods = ['week', 'month', 'all'] as const;
+    const stats = Object.fromEntries(periods.map((p) => [p, shareableStats(computeStats(input, p, now, tz), ALL_VISIBLE, now)]));
     this.net.publishProfile({ stats });
+    const homes = new Set(this.places.filter((p) => p.type === 'home' && p.owner === me.deviceId).map((p) => p.id));
+    this.net.publishStatsAgg(Object.fromEntries(periods.map((p) => [p, aggregateFor(input, p, now, tz, homes)])));
   }
 
   /** Runs headlessly after a push ping / periodic WorkManager job / boot: catch up, ack, notify. */
@@ -235,6 +262,7 @@ class Engine {
       await this.crews.start();
       this.emotes.start();
       this.chat.start();
+      startCheckInReceiver(this.crews, this.me);
     } else if (!this.crews.started) {
       // Relays closed by the radio governor: open them for this sync window only.
       await this.radioWindow();
@@ -267,7 +295,7 @@ class Engine {
     if (p.transport || p.pcRelayUrl !== undefined) this.net.applyTransportSettings();
     if (p.ghost !== undefined && this.net.router) {
       const fix = useApp.getState().fix;
-      if (fix) await this.net.publishPresence({ lat: fix.lat, lng: fix.lng, acc: fix.accuracy, spd: fix.speed, hdg: fix.heading, act: useApp.getState().activity, bat: null, chg: false, t: Date.now(), prec: 'p' });
+      if (fix) await this.net.publishPresence({ lat: fix.lat, lng: fix.lng, acc: fix.accuracy, spd: fix.speed, hdg: fix.heading, act: useApp.getState().activity, ...(await currentBattery()), t: Date.now(), prec: 'p' });
     }
   }
 
@@ -278,7 +306,7 @@ class Engine {
     if (me) this.net.publishProfile({});
     useApp.getState().set({ places: this.allPlaces() });
     const fix = useApp.getState().fix;
-    if (fix && this.net.router) await this.net.publishPresence({ lat: fix.lat, lng: fix.lng, acc: fix.accuracy, spd: fix.speed, hdg: fix.heading, act: useApp.getState().activity, bat: null, chg: false, t: Date.now(), prec: 'p' });
+    if (fix && this.net.router) await this.net.publishPresence({ lat: fix.lat, lng: fix.lng, acc: fix.accuracy, spd: fix.speed, hdg: fix.heading, act: useApp.getState().activity, ...(await currentBattery()), t: Date.now(), prec: 'p' });
   }
 
   async finishOnboarding(): Promise<void> {
@@ -373,8 +401,10 @@ class Engine {
     platform.wake.unregister();
     await platform.geofence.clear().catch(() => undefined);
     this.asks.stop();
+    this.memories.stop();
     useAsks.setState({ entries: [] });
     await db.wipeAll();
+    wipeMemoryPhotos();
     await deleteIdentity();
     this.running = false;
     this.booted = null;
@@ -383,3 +413,9 @@ class Engine {
 }
 
 export const engine = new Engine();
+
+/** The current battery reading for an out-of-cadence presence, so it never resets a friend's battery to unknown. */
+async function currentBattery(): Promise<{ bat: number | null; chg: boolean }> {
+  const b = await platform.power.battery().catch(() => ({ level: null, charging: false }));
+  return { bat: b.level, chg: b.charging };
+}

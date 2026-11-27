@@ -32,7 +32,8 @@ export function locateActions(target: LocateTarget, opts: { chat: boolean; drivi
   const out: LocateAction[] = [];
   if (target.kind === 'hidden') out.push('askOnce');
   else out.push('directions', 'along');
-  out.push('ask');
+  // "Ask location" only stands in for locate when their location isn't visible to me.
+  if (target.kind === 'hidden') out.push('ask');
   // While driving the pill stays short: no typing.
   if (opts.chat && !opts.driving) out.push('chat');
   out.push('emote');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_PARTS, CARS, DEFAULT_AVATAR, type AvatarPartKey } from '@crewmap/shared/avatar';
-import { groupOf, isLight, optionLabel, PART_GROUPS, partOptions, pushUndo, RIDE_ICON, withPart } from './avatarParts';
+import { AVATAR_PARTS, CARS, DEFAULT_AVATAR, TRIM_ITEMS, type AvatarPartKey } from '@crewmap/shared/avatar';
+import { groupOf, hasLens, hasTrim, isLight, optionLabel, PART_GROUPS, partOptions, pushUndo, RIDE_ICON, withPart } from './avatarParts';
 
 describe('avatar part picker options', () => {
   it('covers every avatar part exactly once', () => {
@@ -20,6 +20,15 @@ describe('avatar part picker options', () => {
     expect(groupOf('face').color).toBeUndefined();
     expect(groupOf('shoes')).toMatchObject({ color: 'shoeColor', color2: 'shoeColor2' });
     expect(groupOf('accessory').color).toBe('extraColor');
+    expect(PART_GROUPS.map((g) => g.trim).filter(Boolean).sort()).toEqual([...TRIM_ITEMS].sort());
+    expect(groupOf('glasses').lens).toBe(true);
+  });
+
+  it('shows trim and lens fields only where the style has them', () => {
+    expect(hasTrim({ ...DEFAULT_AVATAR, hat: 'none' }, 'hat')).toBe(false);
+    expect(hasTrim({ ...DEFAULT_AVATAR, hat: 'beanie' }, 'hat')).toBe(true);
+    expect(hasLens({ ...DEFAULT_AVATAR, glasses: 'none' })).toBe(false);
+    expect(hasLens({ ...DEFAULT_AVATAR, glasses: 'round' })).toBe(true);
   });
 
   it('changes one part and ignores unknown values', () => {

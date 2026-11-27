@@ -9,3 +9,4 @@ export * from './places';
 export * from './stats';
 export * from './avatar';
 export * from './links';
+export * from './insight';

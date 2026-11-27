@@ -14,6 +14,10 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, In
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { engine } from '../core/engine';
+import { CatchUpFanfare } from '../ui/emotes/CatchUpFanfare';
+import { RecapCard } from '../ui/memories/RecapCard';
+import { CheckInCard } from '../ui/safety/CheckInCard';
+import { answerCheckIn } from '../core/checkIn';
 import { commandFor, navigatePath, readData, type NotifCommand } from '../core/notifRoutes';
 import { syncNotificationLocale } from '../core/notify';
 import { useApp } from '../core/store';
@@ -54,6 +58,9 @@ async function execute(cmd: NotifCommand): Promise<void> {
       return;
     case 'sendBack':
       await engine.emotes.send(cmd.friendId, { preset: cmd.preset as EmotePreset });
+      return;
+    case 'checkInOk':
+      answerCheckIn();
       return;
     case 'navigate': {
       const f = useApp.getState().allFriends[cmd.friendId];
@@ -135,7 +142,10 @@ export default function RootLayout() {
       if (seen.current.has(key)) continue;
       seen.current.add(key);
       const cmd = commandFor(r.actionIdentifier, readData(r.notification.request.content.data), (r as { userText?: string }).userText);
-      if (cmd) void execute(cmd).catch(() => undefined);
+      if (!cmd) continue;
+      // A background action button leaves its notification up; clear it once the emote is queued.
+      const done = cmd.kind === 'sendBack' ? () => Notifications.dismissNotificationAsync(r.notification.request.identifier) : () => undefined;
+      void execute(cmd).then(done).catch(() => undefined);
     }
   }, []);
   useEffect(() => {
@@ -162,13 +172,18 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Screen name="friend/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 0.95], sheetGrabberVisible: true }} />
-          <Stack.Screen name="emote/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6], sheetGrabberVisible: true }} />
+          <Stack.Screen name="emote/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.7, 1], sheetGrabberVisible: true }} />
           <Stack.Screen name="hazard/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.35], sheetGrabberVisible: true }} />
+          <Stack.Screen name="poi/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.45], sheetGrabberVisible: true }} />
           <Stack.Screen name="place/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.42], sheetGrabberVisible: true }} />
+          <Stack.Screen name="parked" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true }} />
           <Stack.Screen name="search" options={{ animation: 'fade_from_bottom' }} />
           <Stack.Screen name="route" options={{ animation: 'fade' }} />
           <Stack.Screen name="scan" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
+        {onboarded && <RecapCard />}
+        {onboarded && <CatchUpFanfare />}
+        {onboarded && <CheckInCard />}
         {engineFailed && <EngineBanner onRetry={retry} busy={retrying} />}
       </SafeAreaProvider>
     </GestureHandlerRootView>

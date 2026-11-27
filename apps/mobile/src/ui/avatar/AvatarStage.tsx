@@ -29,7 +29,7 @@ const FULL: Frame = { y: 0, dist: 2.38, pitch: 0.39 };
 const RIDE: Frame = { y: 0, dist: 3.58, pitch: 0.46 };
 const FOCUS: Record<string, Frame> = {
   hair: { y: 0.5, dist: 1.25, pitch: 0.3 },
-  hat: { y: 0.55, dist: 1.3, pitch: 0.3 },
+  hat: { y: 0.56, dist: 1.8, pitch: 0.3 },
   face: { y: 0.42, dist: 1.0, pitch: 0.15 },
   glasses: { y: 0.42, dist: 1.0, pitch: 0.15 },
   top: { y: 0.1, dist: 1.55, pitch: 0.25 },
@@ -285,6 +285,7 @@ export function AvatarStage({
     const pan = Gesture.Pan()
       .runOnJS(true)
       .maxPointers(1)
+      .minDistance(2)
       .onStart(() => {
         touch();
         yaw0 = orbit.current.yaw;
@@ -344,9 +345,8 @@ export function AvatarStage({
         fallback
       ) : (
         <SpriteBoundary size={size} fallback={fallback}>
-          <GestureDetector gesture={gesture}>
-          <View style={{ flex: 1, marginTop: insetTop }} testID={testID ? `${testID}-orbit` : undefined}>
-          <Canvas camera={camera} style={{ flex: 1 }}>
+          <View style={{ flex: 1, marginTop: insetTop }}>
+          <Canvas camera={camera} style={{ flex: 1 }} pointerEvents="none">
             <hemisphereLight args={['#ffffff', '#8899bb', 2.2]} />
             <directionalLight position={[2, 4, 3]} intensity={2.4} />
             <Suspense fallback={null}>
@@ -355,8 +355,11 @@ export function AvatarStage({
               </Framing>
             </Suspense>
           </Canvas>
-          </View>
+          {/* Touch layer above the GL view: the canvas can never steal the drag, so swiping turns the model in every tab. */}
+          <GestureDetector gesture={gesture}>
+            <View collapsable={false} style={StyleSheet.absoluteFill} testID={testID ? `${testID}-orbit` : undefined} />
           </GestureDetector>
+          </View>
         </SpriteBoundary>
       )}
       {state === 'loading' && <Shimmer size={size} still={still} />}

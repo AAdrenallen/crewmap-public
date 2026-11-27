@@ -32,12 +32,16 @@ export const KINDS = {
   // Text chat (see chat.ts): kept on relays for the router's 3-day catch-up window.
   chat: { fn: 'emotes', durable: true, ttlS: 3 * 86_400, ack: true },
   arrival: { fn: 'arrivals', durable: true, ttlS: 3600, ack: true },
+  // Safety check-in (D66): "didn't answer after a long stop" / "all fine", sealed to each opted-in crewmate.
+  'check-in': { fn: 'arrivals', durable: true, ttlS: 6 * 3600, ack: true },
   'sync-update': { fn: 'sync', durable: true, ttlS: 7 * 86_400, ack: false },
   'sync-sv': { fn: 'sync', durable: false, ttlS: 0, ack: false },
   'sync-diff': { fn: 'sync', durable: true, ttlS: 86_400, ack: false },
   membership: { fn: 'sync', durable: true, ttlS: 30 * 86_400, ack: false },
   config: { fn: 'sync', durable: true, ttlS: 30 * 86_400, ack: false },
   hazards: { fn: 'chores', durable: true, ttlS: 3600, ack: false },
+  // Map points (D64): fuel prices, chargers, traffic cameras fetched by the chore peer. Older builds ignore the kind.
+  pois: { fn: 'chores', durable: true, ttlS: 3600, ack: false },
   chore: { fn: 'chores', durable: false, ttlS: 0, ack: false },
   ack: { fn: 'presence', durable: false, ttlS: 0, ack: false },
   // Drive-along (D31). Session ops are acked; the live stream is never stored, acked or woken for; payloads are sealed
@@ -51,6 +55,13 @@ export const KINDS = {
   'eta-share': { fn: 'presence', durable: true, ttlS: 3600, ack: false },
   // Viewer demand (demand.ts): "my app is open until t". Live only; a missed one just means the default cadence.
   watch: { fn: 'presence', durable: false, ttlS: 0, ack: false },
+  // Leaderboard aggregates (statsAgg.ts, D56): counts only; kept a week so an offline friend still gets the latest.
+  'stats-agg': { fn: 'sync', durable: true, ttlS: 7 * 86_400, ack: false },
+  // Trip memories (memories.ts, D68): sealed to each outing member; kept a week so an offline crewmate still gets them.
+  memory: { fn: 'emotes', durable: true, ttlS: 7 * 86_400, ack: true },
+  'memory-photo': { fn: 'emotes', durable: true, ttlS: 7 * 86_400, ack: true },
+  'memory-blob': { fn: 'emotes', durable: true, ttlS: 7 * 86_400, ack: false },
+  'memory-react': { fn: 'emotes', durable: true, ttlS: 7 * 86_400, ack: false },
   // Benchmark probe: acked, never shown to the recipient.
   bench: { fn: 'emotes', durable: true, ttlS: 600, ack: true },
 } as const satisfies Record<string, { fn: FunctionName; durable: boolean; ttlS: number; ack: boolean }>;

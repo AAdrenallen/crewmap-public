@@ -1,9 +1,9 @@
 import { memo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { roughEtaMs, type GroupDest } from '@crewmap/shared/companions';
+import { arrivalGaps, convoyLeader, roughEtaMs, type GroupDest } from '@crewmap/shared/companions';
 import { t } from '@crewmap/shared/i18n';
-import { formatClock } from '@crewmap/shared/units';
+import { formatClock, formatMinutes } from '@crewmap/shared/units';
 import { engine } from '../../core/engine';
 import { useDriveAlong } from '../../core/companions';
 import { useApp } from '../../core/store';
@@ -34,6 +34,12 @@ export const GroupDriveCards = memo(function GroupDriveCards({ top }: { top: num
   const pending = useDriveAlong((s) => s.session?.pendingDest ?? null);
   const hostName = useDriveAlong((s) => (s.session ? (s.session.members[s.session.owner]?.name ?? '') : ''));
   const summary = useDriveAlong((s) => s.summary);
+  // Convoy (D65): the leader shared a route I have not adopted or dismissed yet.
+  const followName = useDriveAlong((s) => {
+    const leader = s.session ? convoyLeader(s.session) : null;
+    if (!leader || leader === engine.me.deviceId || s.followDone === leader || !s.routes[leader]) return null;
+    return s.session!.members[leader]?.name ?? null;
+  });
   const [busy, setBusy] = useState(false);
   const action = noticePolicy('groupDrive', ctx, nextM);
   const pill = action === 'pill';
@@ -118,6 +124,29 @@ export const GroupDriveCards = memo(function GroupDriveCards({ top }: { top: num
     );
   }
 
+  if (followName) {
+    const follow = async () => {
+      if (busy) return;
+      setBusy(true);
+      await engine.companions.followLeader();
+      setBusy(false);
+    };
+    return (
+      <View pointerEvents="box-none" style={place}>
+        <View testID="cv-follow" style={[pill ? styles.pill : styles.card, { backgroundColor: pill ? th.glass : th.card, borderColor: th.separator }, pill ? elevation.low : elevation.high, !pill && styles.head]}>
+          <Icon name="route" size={18} color={th.accent} />
+          <Text style={[pill ? type.caption : type.headline, pill ? font('bold') : null, { color: th.text, flex: 1 }]} numberOfLines={2}>
+            {t('cv.follow', { name: followName })}
+          </Text>
+          <Button testID="cv-follow-go" compact label={t('cv.followShort')} loading={busy} onPress={() => void follow()} />
+          <Bouncy testID="cv-follow-x" accessibilityLabel={t('common.close')} onPress={() => engine.companions.dismissFollow()} hitSlop={{ top: 4, bottom: 4, left: 6, right: 6 }} style={styles.pillX}>
+            <Icon name="close" size={16} color={th.textSoft} />
+          </Bouncy>
+        </View>
+      </View>
+    );
+  }
+
   if (summary) {
     return (
       <View pointerEvents="box-none" style={place}>
@@ -128,9 +157,10 @@ export const GroupDriveCards = memo(function GroupDriveCards({ top }: { top: num
               {t('gd.summary', { dest: summary.dest })}
             </Text>
           </View>
-          {summary.arrivals.map((a, i) => (
+          {arrivalGaps(summary).map((a, i) => (
             <Text key={a.id} style={[type.small, { color: th.text }]}>
               {i + 1}. {a.name}  {formatClock(a.at)}
+              {i > 0 && a.afterS >= 60 ? `  +${formatMinutes(a.afterS)}` : ''}
             </Text>
           ))}
           {summary.missing.length > 0 && (

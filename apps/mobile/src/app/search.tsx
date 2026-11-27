@@ -12,6 +12,8 @@ import { engine } from '../core/engine';
 import { addRecent, clearRecent, loadFavourites, loadRecent, removeRecent, toggleFav } from '../core/searchHistory';
 import { useApp } from '../core/store';
 import { useBackClose } from '../ui/useBackClose';
+import { FuelResults } from '../ui/FuelResults';
+import { isFuelQuery } from '@crewmap/hazards';
 import { Bouncy, EmptyState, Field, IconButton, IconTile, ListItem, type IconName } from '../ui/kit';
 import { AvatarStill } from '../ui/map/Sprites';
 import { palette, type, useTheme } from '../ui/theme';
@@ -79,7 +81,8 @@ export default function Search() {
   useEffect(() => {
     const s = seq.current;
     setFailed(false);
-    if (q.trim().length < 3 || !hasMapboxToken() || !online) {
+    // Generic fuel words are answered from the on-device station cache (FuelResults), not Mapbox (D64).
+    if (q.trim().length < 3 || !hasMapboxToken() || !online || isFuelQuery(q)) {
       s.cancel();
       setRemote([]);
       setLoading(false);
@@ -194,6 +197,7 @@ export default function Search() {
         keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}
         ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: th.separator }]} />}
+        ListHeaderComponent={isFuelQuery(q) ? <FuelResults onPick={(name, lat, lng) => go(name, lat, lng)} /> : undefined}
         ListEmptyComponent={empty}
         ListFooterComponent={footer()}
         renderItem={({ item }) => item.header ? (

@@ -8,9 +8,10 @@ import { extractInviteLink } from '@crewmap/shared/links';
 import { engine } from '../core/engine';
 import { inviteErrorMessage, inviteStash } from '../core/inviteErrors';
 import { useApp } from '../core/store';
-import { Button, H, Icon, ScreenHeader, T } from '../ui/kit';
+import { Button, Card, H, Icon, ScreenHeader, T } from '../ui/kit';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../ui/theme';
+import { CheckInOptIn, useCheckInChoice } from '../ui/safety/CheckInOptIn';
 
 /** Links already consumed by a successful join: a stale URL must not re-trigger it. */
 const consumed = new Set<string>();
@@ -24,7 +25,9 @@ export default function Join() {
   const url = Linking.useLinkingURL();
   const rawLink = extractInviteLink(params.link ?? '') ?? extractInviteLink(url ?? '');
   const link = rawLink && !consumed.has(rawLink) ? rawLink : null;
-  const [state, setState] = useState<'idle' | 'joining' | 'error'>('idle');
+  const [state, setState] = useState<'idle' | 'joining' | 'joined' | 'error'>('idle');
+  const [joinedId, setJoinedId] = useState<string | null>(null);
+  const joinedCheckIn = useApp((s) => (joinedId ? s.sharing[joinedId]?.checkIn === true : false));
   const [error, setError] = useState('');
   const me = useApp((s) => s.me);
   const circleName = (() => {
@@ -49,11 +52,15 @@ export default function Join() {
     busy.current = true;
     setState('joining');
     try {
-      await engine.crews.join(link, me.name);
+      const id = await engine.crews.join(link, me.name, { checkIn: useCheckInChoice.getState().on });
       consumed.add(link);
       await inviteStash.clear();
       await engine.finishOnboarding();
-      if (alive.current) router.replace('/');
+      // One last choice before the map: the safety check-in for this crew (D66).
+      if (alive.current) {
+        setJoinedId(id);
+        setState('joined');
+      }
     } catch (e) {
       if (alive.current) {
         setError(inviteErrorMessage(e));
@@ -99,6 +106,14 @@ export default function Join() {
         <>
           <ActivityIndicator color={th.accent} size="large" />
           <T soft style={{ textAlign: 'center' }}>{t('circle.joining')}</T>
+        </>
+      )}
+      {state === 'joined' && joinedId && (
+        <>
+          <Card style={{ paddingVertical: 0, overflow: 'hidden' }}>
+            <CheckInOptIn value={joinedCheckIn} onChange={(on) => void engine.crews.setPolicy(joinedId, { checkIn: on })} />
+          </Card>
+          <Button testID="join-continue" label={t('onb.next')} onPress={() => router.replace('/')} />
         </>
       )}
       {state === 'error' && (

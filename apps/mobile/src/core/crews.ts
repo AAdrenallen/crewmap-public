@@ -1,9 +1,12 @@
 import { platform } from '@crewmap/platform';
 import {
   chatAllowed,
+  checkInAllowed,
   companionKindAllowed,
   crewThread,
   isCompanionKind,
+  isMemoryKind,
+  memoryKindAllowed,
   sealJson,
   unb64,
   DEFAULT_PUBLIC_RELAYS,
@@ -31,6 +34,7 @@ import {
   type SharingPolicy,
   type StoredInviteV1,
   type UserOverride,
+  statsAllowed,
   lockoutRemainingMs,
   NO_LOCKOUT,
   normaliseJoinCode,
@@ -41,16 +45,22 @@ import {
 import type { FriendReport, SignedHazardConfig } from '@crewmap/hazards';
 import { DEFAULT_AVATAR, DEFAULT_CAR } from '@crewmap/shared/avatar';
 import { haversineM } from '@crewmap/shared/geo';
+import { restrictAgg, type AggSet, type Period } from '@crewmap/shared/stats';
 import { displayEtaS, planEtaRefresh, type EtaBase, type EtaFriendInput, type EtaView } from '@crewmap/shared/etaRefresh';
 import { applyPlaceSharing, arrivalCrews, placeFromWire, type ArrivalSubscription, type CrewPlaceTarget, type Place } from '@crewmap/shared/places';
 import { CircleManager, codeRelays, invitesKey } from './circle';
 import { chatDb, kvGet, kvSet } from './db';
 import { hasMapboxToken, matrixFrom } from './mapbox';
+import { loadCrewBias, setCrewBias } from './etaTruth';
+import { DRIVE_SAMPLES_KEY } from './tracking';
+import { crewBiasOf, fitClassModels, sampleObs, type DriveSample } from '@crewmap/shared/navigation';
 import { Network } from './network';
 import { useAsks, withOnceShares } from './asksStore';
-import { useApp, type CrewInfo, type FriendView, type Profile } from './store';
+import { useApp, type AppFriendAggs, type CrewInfo, type FriendView, type Profile } from './store';
 
 const STORAGE_KEY = 'crews.v2';
+/** Received leaderboard aggregates, by sender (D57). */
+const AGG_KEY = 'statsAgg.v1';
 
 interface Crew {
   circle: CircleManager;
@@ -62,8 +72,10 @@ function kindAllowed(kind: Kind, pol: SharingPolicy): boolean {
   if (kind === 'emote' || kind === 'quip' || kind === 'quip-blob') return pol.emotes;
   if (kind === 'chat') return chatAllowed(pol);
   if (kind === 'arrival') return pol.places;
-  if (kind === 'hazards') return pol.location !== 'hidden';
+  if (kind === 'check-in') return pol.checkIn === true;
+  if (kind === 'hazards' || kind === 'pois') return pol.location !== 'hidden';
   if (isCompanionKind(kind)) return companionKindAllowed(kind, pol);
+  if (isMemoryKind(kind)) return memoryKindAllowed(kind, pol);
   return true;
 }
 
@@ -158,6 +170,8 @@ export class Crews {
   /** Mailbox, invites and every crew's router. */
   async start(): Promise<void> {
     this.running = true;
+    void loadCrewBias();
+    if (Object.keys(useApp.getState().friendAggs).length === 0) useApp.getState().set({ friendAggs: await kvGet<AppFriendAggs>(AGG_KEY, {}) });
     this.mailbox?.stop();
     this.mailbox = new Mailbox(
       this.pool,
@@ -250,6 +264,14 @@ export class Crews {
       demand.setForeground(this.foreground);
       this.attached.get(id)?.push(demand.onDemand((v) => this.demandListeners.forEach((l) => l(v))));
     }
+    const aggs = c.net.aggs;
+    if (aggs) {
+      this.attached.get(id)?.push(aggs.onAgg((s, a, eb) => {
+        setCrewBias(s, eb);
+        this.onAgg(s, a);
+      }));
+      this.pushAggs(id);
+    }
     const me = useApp.getState().me;
     if (me) c.net.writeProfile({ ...me, wake: platform.wake.endpoint() });
   }
@@ -273,7 +295,9 @@ export class Crews {
 
   private dispatch(crewId: string, kind: Kind, m: Incoming, hs: Set<CrewHandler>): void {
     // Symmetric: a crew we don't send emotes / arrivals to doesn't get to send them to us either.
-    if (!kindAllowed(kind, this.policy(crewId)) && kind !== 'hazards') return;
+    // Check-in alerts (D66): only from a crewmate I opted in to (crew policy, or my override for them).
+    const pol = kind === 'check-in' ? this.effective(crewId, m.sender) : this.policy(crewId);
+    if (!kindAllowed(kind, pol) && kind !== 'hazards' && kind !== 'pois') return;
     for (const h of hs) h(m, crewId);
   }
 
@@ -299,28 +323,32 @@ export class Crews {
 
   // --- crew management --------------------------------------------------------------------------------------------
 
-  async create(name: string, myName: string): Promise<string> {
+  async create(name: string, myName: string, opts: { checkIn?: boolean } = {}): Promise<string> {
     const c = this.makeCrew();
     await c.circle.create(name, myName);
     const id = this.adopt(c);
+    if (opts.checkIn !== undefined) this.sharing[id] = { ...this.policy(id), checkIn: opts.checkIn };
     await this.save();
     await this.startCrew(c);
     this.refreshFriends();
     this.onPolicyChange(id);
+    this.pushAggs(id);
     return id;
   }
 
-  async join(link: string, myName: string): Promise<string> {
+  async join(link: string, myName: string, opts: { checkIn?: boolean } = {}): Promise<string> {
     const c = this.makeCrew();
     await c.circle.join(link, myName);
     const id = c.circle.state!.circleId;
     const existing = this.crews.get(id);
     if (existing) return id;
     this.adopt(c);
+    if (opts.checkIn !== undefined) this.sharing[id] = { ...this.policy(id), checkIn: opts.checkIn };
     await this.save();
     await this.startCrew(c);
     this.refreshFriends();
     this.onPolicyChange(id);
+    this.pushAggs(id);
     return id;
   }
 
@@ -369,6 +397,7 @@ export class Crews {
     await this.save();
     this.publishState();
     this.onPolicyChange(id);
+    this.pushAggs(id);
   }
 
   /** What one friend may see through one crew: their override ?? that crew's policy (D52). */
@@ -384,6 +413,7 @@ export class Crews {
     await this.save();
     this.publishState();
     this.onPolicyChange('');
+    for (const cid of this.order) this.pushAggs(cid);
   }
 
   setFilter(id: string | null): void {
@@ -445,6 +475,45 @@ export class Crews {
 
   // --- outgoing (policy-enforced) ---------------------------------------------------------------------------------
 
+  // --- leaderboard aggregates (protocol 9, D57) ---------------------------------------------------------------------
+
+  private myAggs: AggSet | null = null;
+
+  /** My full aggregates; each crew seals a copy per friend with only the groups that friend may see. */
+  publishStatsAgg(aggs: AggSet): void {
+    this.myAggs = aggs;
+    for (const id of this.order) this.pushAggs(id);
+    void this.refreshEtaBias();
+  }
+
+  /** My own road-group ETA multipliers from my drive samples, sent with the stats aggregates (D60). */
+  private async refreshEtaBias(): Promise<void> {
+    const obs = sampleObs(await kvGet<DriveSample[]>(DRIVE_SAMPLES_KEY, []));
+    if (obs.length === 0) return;
+    const eb = crewBiasOf(fitClassModels(obs));
+    for (const c of this.crews.values()) c.net.aggs?.setEtaBias(eb);
+  }
+
+  private pushAggs(crewId: string): void {
+    const c = this.crews.get(crewId);
+    const full = this.myAggs;
+    if (!c?.net.aggs || !full) return;
+    c.net.aggs.publish((peer) => {
+      const pol = this.effective(crewId, peer);
+      if (!pol.stats) return null;
+      const out: AggSet = {};
+      for (const [p, a] of Object.entries(full) as [Period, NonNullable<AggSet[Period]>][]) out[p] = restrictAgg(a, (g) => statsAllowed(pol, g));
+      return out;
+    });
+  }
+
+  private onAgg(sender: string, aggs: AggSet): void {
+    const cur = useApp.getState().friendAggs;
+    const next = { ...cur, [sender]: { t: Date.now(), a: aggs } };
+    useApp.getState().set({ friendAggs: next });
+    void kvSet(AGG_KEY, next);
+  }
+
   /** My full profile into every crew doc, reduced per crew policy. */
   publishProfile(p: Partial<Profile>): void {
     const cur = useApp.getState().me;
@@ -481,6 +550,7 @@ export class Crews {
         const id = c?.circle.state?.circleId ?? '';
         // A friend set to Hidden gets no arrival / departure / driving-home either (they reveal where I am).
         if (to && kind === 'arrival' && this.overrides[to]?.location === 'hidden') return false;
+        if (to && kind === 'check-in' && !checkInAllowed(this.effective(id, to), this.overrides[to])) return false;
         return !!c && !!c.net.router && (!to || c.net.has(to)) && kindAllowed(kind, to ? this.effective(id, to) : this.policy(id));
       });
   }
@@ -490,6 +560,25 @@ export class Crews {
     const c = this.crews.get(crewId);
     if (!c?.net.router || !kindAllowed(kind, this.policy(crewId))) return '';
     return c.net.router.broadcast(kind, payload);
+  }
+
+  /** Someone would get my check-in alerts (D66). Config only: true while the radio governor has the routers closed. */
+  checkInConfigured(): boolean {
+    for (const [id, c] of this.crews)
+      for (const m of c.circle.state?.members.keys() ?? []) {
+        if (m === this.me.deviceId) continue;
+        const pol = this.effective(id, m);
+        if (kindAllowed('check-in', pol) && checkInAllowed(pol, this.overrides[m])) return true;
+      }
+    return false;
+  }
+
+  /** Crewmates (deduped over crews) who get my safety check-in alerts (D66). */
+  checkInRecipients(): string[] {
+    const out = new Set<string>();
+    for (const c of this.crews.values())
+      for (const m of c.circle.state?.members.keys() ?? []) if (m !== this.me.deviceId && !out.has(m) && this.companionAllowed('check-in', m)) out.add(m);
+    return [...out];
   }
 
   /** Whether some crew shared with `to` may carry this companion kind (D31). */

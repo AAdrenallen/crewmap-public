@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import type { MergedHazard, SourceHealth } from '@crewmap/hazards';
+import type { FuelGrade, MergedHazard, Poi, SourceHealth } from '@crewmap/hazards';
 import type { FriendPresence, QuipMeta, SharingPolicy, TransportConfig, UserOverride } from '@crewmap/p2p';
 import type { AvatarConfig, CarConfig } from '@crewmap/shared/avatar';
 import type { Activity, RiskyEvent } from '@crewmap/shared/driving';
 import type { FasterOffer, NavRoute, ProgressState, RouteCandidate } from '@crewmap/shared/navigation';
 import type { Place, ProximityMoment } from '@crewmap/shared/places';
-import type { Period, SharedStats } from '@crewmap/shared/stats';
+import type { AggSet, Period, SharedStats } from '@crewmap/shared/stats';
 import type { EmoteMessage } from '@crewmap/shared/emotes';
 import { NO_RIDE_MUTES, type RideMutes } from '@crewmap/shared/rideMutes';
 import type { Fix } from '@crewmap/platform';
@@ -87,6 +87,12 @@ export interface Settings {
   anonReceive: boolean;
   /** Switch to a faster route automatically instead of offering it (D43). */
   autoSwitchFaster: boolean;
+  /** Fuel grade whose price the map pins and fuel search show (D64). */
+  fuelGrade: FuelGrade;
+  /** Fuel prices, chargers and traffic cameras on the map. */
+  mapPois: boolean;
+  /** Safety check-in (D66): minutes stopped somewhere remote before the phone asks. */
+  checkInWaitMin: number;
 }
 
 export type VoiceMode = 'on' | 'alerts' | 'off';
@@ -103,6 +109,8 @@ export interface NavSession {
   faster?: FasterOffer | null;
 }
 
+export type AppFriendAggs = Record<string, { t: number; a: AggSet }>;
+
 export interface AppState {
   ready: boolean;
   onboarded: boolean;
@@ -116,6 +124,8 @@ export interface AppState {
   sharing: Record<string, SharingPolicy>;
   /** Per-friend overrides of the crew policies (D52), by deviceId. */
   shareOverrides: Record<string, UserOverride>;
+  /** Leaderboard aggregates received from friends (D57); a friend who never sent one is absent. */
+  friendAggs: AppFriendAggs;
   /** Every friend across crews (merged); friends is this filtered by crewFilter. */
   allFriends: Record<string, FriendView>;
   friends: Record<string, FriendView>;
@@ -130,6 +140,8 @@ export interface AppState {
   nav: NavSession | null;
   hazards: MergedHazard[];
   hazardHealth: SourceHealth[];
+  /** Fuel stations, chargers, traffic cameras around the view / route (D64), merged across sources. */
+  pois: Poi[];
   emotes: IncomingEmote[];
   /** Per friend: emotes older than a day, summarised silently (never blasted). */
   emoteDigest: Record<string, { count: number; latestAt: number }>;
@@ -159,6 +171,7 @@ export const useApp = create<AppState>((set) => ({
   crewFilter: null,
   sharing: {},
   shareOverrides: {},
+  friendAggs: {},
   allFriends: {},
   friends: {},
   fix: null,
@@ -171,6 +184,7 @@ export const useApp = create<AppState>((set) => ({
   nav: null,
   hazards: [],
   hazardHealth: [],
+  pois: [],
   emotes: [],
   emoteDigest: {},
   rideMutes: NO_RIDE_MUTES,
@@ -198,6 +212,9 @@ export const useApp = create<AppState>((set) => ({
     anonPublish: false,
     anonReceive: true,
     autoSwitchFaster: false,
+    fuelGrade: 'regular',
+    mapPois: true,
+    checkInWaitMin: 5,
   },
   online: true,
   set: (p) => set(p),

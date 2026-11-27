@@ -1,4 +1,5 @@
 import { parseLanes, type RawLane } from './lanes';
+import { rightOnRedBanned } from './rightOnRed';
 import { cumulativeDistances, decodePolyline, type LatLng } from '../geo';
 
 export type ManeuverType =
@@ -87,6 +88,8 @@ export interface NavStep {
   junctions?: Junction[];
   /** Lanes Mapbox reports at this step's maneuver intersection (`intersections[0].lanes`), one entry per lane. */
   maneuverLanes?: Lane[];
+  /** Mapbox Streets v8 class driven for most of this step ('motorway', 'primary', 'street', …), ramps ignored. */
+  roadClass?: string;
 }
 
 export interface Junction {
@@ -134,6 +137,8 @@ export interface NavRoute {
   controls?: RouteControls;
   /** `typicalDurationS` was estimated (via-waypoint routes come back without `duration_typical`). */
   typicalEstimated?: boolean;
+  /** Along-route positions (m) of traffic signals, ascending (convoy "N lights back", D65). Absent when unknown. */
+  signalsAlongM?: number[];
 }
 
 export interface RouteControls {
@@ -142,11 +147,28 @@ export interface RouteControls {
   yields: number;
   /** Real turns: maneuvers other than depart/arrive/continue/new name/merge and not straight on. */
   turns: number;
-  /** Length driven on motorway/trunk roads (m). */
+  /** Length driven on motorway/trunk roads and their ramps (m), measured per intersection span. */
   fastRoadM: number;
+  /** Turns that cross oncoming traffic (left / sharp left, excluding ramps and roundabouts). */
+  leftTurns?: number;
+  /** Right / sharp-right turns at a traffic signal where right turn on red is banned (island of Montréal). */
+  noRedRightTurns?: number;
+  /** Length on local streets (street, street_limited, service, track) and on tertiary collectors (m). */
+  minorRoadM?: number;
+  tertiaryRoadM?: number;
+  /** Length on toll roads (intersection class `toll`), m. */
+  tollM?: number;
 }
 
 const NOT_TURNS = new Set(['depart', 'arrive', 'continue', 'new name', 'merge', 'notification']);
+const FAST_CLASSES = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link']);
+const MINOR_CLASSES = new Set(['street', 'street_limited', 'service', 'track', 'path']);
+const NO_LEFT = new Set(['roundabout', 'rotary', 'roundabout turn', 'exit roundabout', 'exit rotary', 'on ramp', 'off ramp', 'fork', 'merge']);
+
+/** Class of a road for naming and scoring: `_link` ramps count as their main class. */
+export function baseRoadClass(cls: string): string {
+  return cls.endsWith('_link') ? cls.slice(0, -5) : cls;
+}
 
 // --- Mapbox Directions v5 raw shapes (only the fields we use) -------------------------------------------------
 
@@ -177,7 +199,7 @@ interface MbStep {
   maneuver: { type: string; modifier?: string; location: [number, number]; bearing_after: number; instruction: string; exit?: number };
   bannerInstructions?: MbBanner[];
   voiceInstructions?: { distanceAlongGeometry: number; announcement: string }[];
-  intersections?: { classes?: string[]; lanes?: RawLane[]; location: [number, number]; mapbox_streets_v8?: { class?: string }; traffic_signal?: boolean; stop_sign?: boolean; yield_sign?: boolean; bearings?: number[]; entry?: boolean[]; in?: number; out?: number }[];
+  intersections?: { classes?: string[]; lanes?: RawLane[]; location: [number, number]; geometry_index?: number; mapbox_streets_v8?: { class?: string }; traffic_signal?: boolean; stop_sign?: boolean; yield_sign?: boolean; bearings?: number[]; entry?: boolean[]; in?: number; out?: number }[];
 }
 interface MbLeg {
   steps: MbStep[];
@@ -231,11 +253,21 @@ export function parseMapboxRoute(r: MbRoute, id: string): NavRoute {
   const segDurationS: number[] = [];
   const segSpeedKph: (number | null)[] = [];
   const incidents: RouteIncident[] = [];
+  const signalsAlongM: number[] = [];
   let along = 0;
   let geomOffset = 0;
-  const controls: RouteControls = { signals: 0, stops: 0, yields: 0, turns: 0, fastRoadM: 0 };
+  const controls: RouteControls = { signals: 0, stops: 0, yields: 0, turns: 0, fastRoadM: 0, leftTurns: 0, noRedRightTurns: 0, minorRoadM: 0, tertiaryRoadM: 0, tollM: 0 };
+  const addClassLen = (cls: string, m: number) => {
+    if (FAST_CLASSES.has(cls)) controls.fastRoadM += m;
+    else if (MINOR_CLASSES.has(cls)) controls.minorRoadM! += m;
+    else if (baseRoadClass(cls) === 'tertiary') controls.tertiaryRoadM! += m;
+  };
 
   for (const leg of r.legs) {
+    const legFirstStep = steps.length;
+    // Per intersection: the class of the road leaving it, driven until the next intersection (route-level indices).
+    const spans: { gi: number; cls: string; step: number; toll: boolean }[] = [];
+    let spansOk = true;
     let legSegs = 0;
     for (const ms of leg.annotation?.maxspeed ?? []) {
       if ('speed' in ms) maxspeedKph.push(ms.unit === 'mph' ? Math.round(ms.speed * 1.609344) : ms.speed);
@@ -272,13 +304,24 @@ export function parseMapboxRoute(r: MbRoute, id: string): NavRoute {
       if (classes.has('bridge')) structures.push('bridge');
       for (const x of st.intersections ?? []) {
         if (x.traffic_signal) controls.signals++;
+        if (x.traffic_signal && typeof x.geometry_index === 'number') signalsAlongM.push(cum[Math.min(geomOffset + x.geometry_index, cum.length - 1)] ?? 0);
         if (x.stop_sign) controls.stops++;
         if (x.yield_sign) controls.yields++;
       }
       if (!NOT_TURNS.has(st.maneuver.type) && !(st.maneuver.modifier ?? '').includes('straight')) controls.turns++;
-      const c0 = st.intersections?.[0];
-      const cls0 = c0?.mapbox_streets_v8?.class ?? '';
-      if (c0?.classes?.includes('motorway') || cls0 === 'motorway' || cls0 === 'trunk') controls.fastRoadM += st.distance;
+      if (!NOT_TURNS.has(st.maneuver.type) && !NO_LEFT.has(st.maneuver.type) && (st.maneuver.modifier === 'left' || st.maneuver.modifier === 'sharp left')) controls.leftTurns!++;
+      if (
+        !NOT_TURNS.has(st.maneuver.type) &&
+        !NO_LEFT.has(st.maneuver.type) &&
+        (st.maneuver.modifier === 'right' || st.maneuver.modifier === 'sharp right') &&
+        st.intersections?.[0]?.traffic_signal &&
+        rightOnRedBanned(st.maneuver.location[1], st.maneuver.location[0])
+      )
+        controls.noRedRightTurns!++;
+      for (const x of st.intersections ?? []) {
+        if (typeof x.geometry_index !== 'number') spansOk = false;
+        else spans.push({ gi: x.geometry_index, cls: x.mapbox_streets_v8?.class ?? (x.classes?.includes('motorway') ? 'motorway' : ''), step: steps.length, toll: x.classes?.includes('toll') === true });
+      }
       const junctions: Junction[] = [];
       for (const x of st.intersections ?? []) {
         if (!x.bearings || x.out === undefined || x.bearings.length < 3) continue;
@@ -330,6 +373,35 @@ export function parseMapboxRoute(r: MbRoute, id: string): NavRoute {
       steps.push(step);
       along += st.distance;
     }
+    // Road-class lengths per intersection span; older/partial responses fall back to the step's first intersection.
+    const legEnd = legSegs > 0 ? geomOffset + legSegs : geometry.length - 1;
+    const perStep = new Map<number, Map<string, number>>();
+    if (spansOk && spans.length > 0) {
+      spans.forEach((sp, k) => {
+        const a = cum[Math.min(geomOffset + sp.gi, cum.length - 1)] ?? 0;
+        const next = spans[k + 1];
+        const b = cum[Math.min(next ? geomOffset + next.gi : legEnd, cum.length - 1)] ?? a;
+        const m = Math.max(0, b - a);
+        addClassLen(sp.cls, m);
+        if (sp.toll) controls.tollM! += m;
+        const per = perStep.get(sp.step) ?? new Map<string, number>();
+        per.set(sp.cls, (per.get(sp.cls) ?? 0) + m);
+        perStep.set(sp.step, per);
+      });
+    } else {
+      leg.steps.forEach((st, i) => {
+        const c0 = st.intersections?.[0];
+        const cls0 = c0?.mapbox_streets_v8?.class ?? (c0?.classes?.includes('motorway') ? 'motorway' : '');
+        addClassLen(cls0, st.distance);
+        if (c0?.classes?.includes('toll')) controls.tollM! += st.distance;
+        perStep.set(legFirstStep + i, new Map([[cls0, st.distance]]));
+      });
+    }
+    for (const [si, per] of perStep) {
+      // Ramps name a step's class only when the step is all ramps.
+      const ranked = [...per].filter(([cls]) => cls !== '').sort((a, b) => Number(a[0].endsWith('_link')) - Number(b[0].endsWith('_link')) || b[1] - a[1]);
+      if (ranked[0]) steps[si]!.roadClass = baseRoadClass(ranked[0][0]);
+    }
     geomOffset += legSegs;
   }
 
@@ -357,6 +429,7 @@ export function parseMapboxRoute(r: MbRoute, id: string): NavRoute {
   if (congestionNumeric.length) route.congestionNumeric = congestionNumeric;
   if (segDurationS.length) route.segDurationS = segDurationS;
   if (segSpeedKph.length) route.segSpeedKph = segSpeedKph;
+  if (signalsAlongM.length) route.signalsAlongM = signalsAlongM.sort((a, b) => a - b);
   // Via-waypoint routes come back with `duration_typical: null`.
   if (typeof r.duration_typical === 'number') route.typicalDurationS = r.duration_typical;
   return route;
@@ -405,6 +478,8 @@ export interface DirectionsRequest {
   radiuses?: (number | null)[];
   /** Only the first and last coordinates are stops; the others are silent vias (`waypoints=0;n`). */
   silentVias?: boolean;
+  /** Points the route must not pass (`exclude=point(lng lat)`), used by discovery's corridor probe. */
+  excludePoints?: LatLng[];
 }
 
 /** Builds a Mapbox Directions `driving-traffic` URL with everything the guidance UI needs. */
@@ -430,6 +505,7 @@ export function directionsUrl(req: DirectionsRequest, accessToken: string): stri
   }
   if (req.radiuses?.some((r) => r !== null)) p.set('radiuses', req.radiuses.map((r) => (r === null ? 'unlimited' : String(r))).join(';'));
   if (req.silentVias && req.coordinates.length > 2) p.set('waypoints', `0;${req.coordinates.length - 1}`);
-  if (req.exclude && req.exclude.length > 0) p.set('exclude', req.exclude.join(','));
+  const exclude = [...(req.exclude ?? []), ...(req.excludePoints ?? []).map((q) => `point(${q.lng.toFixed(6)} ${q.lat.toFixed(6)})`)];
+  if (exclude.length > 0) p.set('exclude', exclude.join(','));
   return `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coords}?${p.toString()}`;
 }

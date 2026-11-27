@@ -237,6 +237,15 @@ class CrewmapPlatformModule : Module() {
       media().openSplit(appContext.currentActivity, pkg) { promise.resolve(it) }
     }
 
+    // --- Trip memory photos (D68) ------------------------------------------------------------------------------------
+
+    AsyncFunction("photoCompress") { uri: String, maxEdge: Int, maxBytes: Int, promise: Promise ->
+      Thread { promise.resolve(runCatching { PhotoTools.compress(ctx, uri, maxEdge, maxBytes) }.getOrNull()) }.start()
+    }
+    AsyncFunction("photoShare") { uri: String, mime: String, title: String, promise: Promise ->
+      Thread { promise.resolve(runCatching { PhotoTools.share(ctx, appContext.currentActivity, uri, mime, title) }.getOrDefault(false)) }.start()
+    }
+
     Function("setSharingEnabled") { on: Boolean -> CrewmapBus.prefs(ctx).edit().putBoolean("sharingEnabled", on).apply() }
   }
 

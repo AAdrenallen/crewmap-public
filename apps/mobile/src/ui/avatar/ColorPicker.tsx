@@ -149,20 +149,42 @@ function HsvPanel({ value, onChange }: { value: string; onChange: (hex: string) 
   );
 }
 
+/** A non-colour choice before the swatches: `natural` keeps the built-in look, `clear` is see-through. */
+export interface SpecialSwatch {
+  kind: 'natural' | 'clear';
+  on: boolean;
+  onPress: () => void;
+}
+
+function Special({ kind, on, onPress, testID }: SpecialSwatch & { testID: string }) {
+  const th = useTheme();
+  const label = t(kind === 'clear' ? 'avatar.clear' : 'avatar.natural');
+  return (
+    <Bouncy testID={testID} haptic="select" accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: on }} onPress={onPress} style={[styles.swatch, { borderColor: on ? th.accent : 'transparent' }]}>
+      <View style={[styles.swatchInner, { overflow: 'hidden', borderColor: th.border, backgroundColor: kind === 'clear' ? 'transparent' : th.cardAlt, borderStyle: kind === 'clear' ? 'dashed' : 'solid', borderWidth: kind === 'clear' ? 2 : StyleSheet.hairlineWidth }]}>
+        <Icon name={on ? 'check' : kind === 'clear' ? 'eye' : 'undo'} size={18} strokeWidth={3} color={th.textSoft} />
+      </View>
+    </Bouncy>
+  );
+}
+
 /**
  * Any-colour picker for one slot: preset swatches, recent picks, and a custom tile that opens the HSV panel.
  * `testPrefix` keeps the legacy swatch ids unchanged (they had none); the custom tile is `<prefix>-color-custom`.
  */
-export function ColorField({ value, presets, onChange, testPrefix }: { value: string; presets: readonly string[]; onChange: (hex: string) => void; testPrefix: string }) {
+export function ColorField({ value, presets, onChange, testPrefix, specials = [] }: { value: string; presets: readonly string[]; onChange: (hex: string) => void; testPrefix: string; specials?: readonly SpecialSwatch[] }) {
   const th = useTheme();
   const recents = useRecentColors((s) => s.list);
   const [open, setOpen] = useState(false);
   useEffect(() => void loadRecentColors(), []);
   const extra = recents.filter((c) => !presets.includes(c));
-  const custom = !presets.includes(value) && !extra.includes(value);
+  const custom = !!value && !specials.some((x) => x.on) && !presets.includes(value) && !extra.includes(value);
   return (
     <View style={{ gap: space(3) }}>
       <View style={styles.wrap}>
+        {specials.map((x) => (
+          <Special key={x.kind} testID={`${testPrefix}-color-${x.kind}`} {...x} />
+        ))}
         {presets.map((c) => (
           <Swatch key={c} color={c} on={value === c} onPress={() => onChange(c)} />
         ))}
@@ -187,7 +209,7 @@ export function ColorField({ value, presets, onChange, testPrefix }: { value: st
           </View>
         </Bouncy>
       </View>
-      {open && <HsvPanel value={value} onChange={onChange} />}
+      {open && <HsvPanel value={value || presets[0] || '#FFFFFF'} onChange={onChange} />}
     </View>
   );
 }

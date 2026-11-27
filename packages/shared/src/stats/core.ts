@@ -188,6 +188,8 @@ export interface StatsVisibility {
   places: boolean;
   streaks: boolean;
   badges: boolean;
+  /** Home leave / return counts (leaderboard aggregate only, D57). */
+  home: boolean;
 }
 
 export const DEFAULT_VISIBILITY: StatsVisibility = {
@@ -199,6 +201,7 @@ export const DEFAULT_VISIBILITY: StatsVisibility = {
   places: false,
   streaks: true,
   badges: true,
+  home: false,
 };
 
 /** The only stats that ever leave the phone: fields the owner allowed, nothing else. */
@@ -241,10 +244,11 @@ const VIS_FIELDS: Record<keyof StatsVisibility, (keyof SharedStats)[]> = {
   places: ['places', 'cities'],
   streaks: ['activeStreakDays', 'cleanTripStreak'],
   badges: ['badges'],
+  home: [],
 };
 
 /** Everything on: the full shareable summary, narrowed per crew afterwards with `restrictShared`. */
-export const ALL_VISIBLE: StatsVisibility = { score: true, distance: true, topSpeed: true, events: true, trips: true, places: true, streaks: true, badges: true };
+export const ALL_VISIBLE: StatsVisibility = { score: true, distance: true, topSpeed: true, events: true, trips: true, places: true, streaks: true, badges: true, home: true };
 
 /** Drop the fields a visibility forbids from an already shareable summary. */
 export function restrictShared(s: SharedStats, v: StatsVisibility): SharedStats {

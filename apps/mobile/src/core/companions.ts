@@ -43,10 +43,32 @@ import {
   type GroupDest,
   type GroupSummary,
   type Relation,
+  applyConvoy,
+  DRIVE_ALONG,
+  ConvoyCallouts,
+  convoyCrew,
+  convoyLeader,
+  convoyOp,
+  convoyOrderMap,
+  ConvoyTracker,
+  followLine,
+  gapLabel,
+  lightsBetween,
+  neighbours,
+  regroupAudience,
+  RegroupWatch,
+  type ConvoyStanding,
+  type GapLabel,
 } from '@crewmap/shared/companions';
 import type { LatLng } from '@crewmap/shared/geo';
-import { t, tIn } from '@crewmap/shared/i18n';
+import { currentRouteQuery, excludeList, type NavRoute } from '@crewmap/shared/navigation';
+import { lang, t, tIn, type Lang } from '@crewmap/shared/i18n';
 import { formatClock, formatDistance } from '@crewmap/shared/units';
+import { budgetLevel } from './apiBudget';
+import { isConvoyMuted, loadConvoyPrefs, useConvoyPrefs } from './convoyPrefs';
+import { directionsQuery } from './mapbox';
+import { getRouteOptions } from './nav';
+import { DRIVE_UX } from '../ui/drive/driveUx';
 import type { Crews } from './crews';
 import { isMuted } from './friendPrefs';
 import { say, voiceLang } from './nav';
@@ -80,9 +102,18 @@ interface DriveAlongState {
   etaOut: string[];
   /** Group drive: who arrived and when, shown once everyone is in or the drive ended. */
   summary: GroupSummary | null;
+  /** Convoy (D65): order number per member (1 = front), changes only when the order does (map badges read it). */
+  convoyOrder: Record<string, number>;
+  /** Convoy regroup alert for the non-interactive banner. */
+  convoyAlert: { id: string; text: string; at: number } | null;
+  /** Leader whose route I adopted or dismissed (the follow prompt is not offered again for them). */
+  followDone: string | null;
 }
 
 export const useDriveAlong = create<DriveAlongState>(() => ({
+  convoyOrder: {},
+  convoyAlert: null,
+  followDone: null,
   summary: null,
   session: null,
   invites: [],
@@ -104,8 +135,23 @@ export interface LiveCompanion {
   rel: Relation | null;
 }
 
+/** Convoy view (D65): standings along the leader's line and each member's gap relative to me. */
+export interface ConvoyView {
+  leader: string;
+  rows: ConvoyStanding[];
+  /** Signed gap to me (> 0 ahead): metres and seconds along the route, signals between us when known. */
+  rel: Record<string, { m: number; s: number; lights: number | null }>;
+}
+
 /** High-rate state (1–2 s): read by the companion strip and edge blips only, never by the map tree (D28). */
-export const useCompanionLive = create<{ live: Record<string, LiveCompanion> }>(() => ({ live: {} }));
+export const useCompanionLive = create<{ live: Record<string, LiveCompanion>; convoy: ConvoyView | null }>(() => ({ live: {}, convoy: null }));
+
+/** Short gap text: "2 lights", "3 min", "1.0 km". */
+export function gapText(l: GapLabel, lang: Lang): string {
+  if (l.kind === 'lights') return tIn(lang, l.n === 1 ? 'cv.light1' : 'cv.lightsN', { n: l.n });
+  if (l.kind === 'min') return tIn(lang, 'cv.minN', { n: l.n });
+  return formatDistance(l.n, lang);
+}
 
 export type DriveAlongAvailability = 'ok' | 'old' | 'policy' | 'offline';
 
@@ -132,6 +178,10 @@ export class Companions {
   private readonly locate = new LocateLimiter();
   private readonly etaSent = new Map<string, { eta: number; at: number }>();
   private etaSid = '';
+  private readonly tracker = new ConvoyTracker();
+  private readonly callouts = new Map<string, ConvoyCallouts>();
+  private readonly regroupWatch = new Map<string, RegroupWatch>();
+  private pendingSay: { text: string; names: string[]; kind: 'guidance' | 'alert'; at: number } | null = null;
 
   constructor(
     private readonly crews: Crews,
@@ -139,11 +189,14 @@ export class Companions {
     private readonly publishNow: () => Promise<void>,
     /** Route to a group destination and start turn-by-turn (the Navigator's preview + start). */
     private readonly startNav: (dest: GroupDest) => Promise<boolean>,
+    /** Start turn-by-turn on a route already fetched (convoy: the leader's line). */
+    private readonly startRoute: (dest: GroupDest, route: NavRoute) => void,
   ) {}
 
   start(): void {
     const r = this.crews.router;
     if (!r || this.offs.length) return;
+    void loadConvoyPrefs();
     const on = (kind: Kind, h: (m: Incoming, v: unknown) => void) =>
       r.on(kind, (m) => h(m, openJson(this.me, m.payload)));
     this.offs.push(
@@ -200,7 +253,7 @@ export class Companions {
    * Start (or extend, when I already host one) a drive-along / group drive with these friends. With `dest` it is a
    * group drive and only friends whose app supports it are invited. Returns who was invited.
    */
-  async startDriveAlong(ids: string[], crew: string | null = null, dest: GroupDest | null = null): Promise<string[]> {
+  async startDriveAlong(ids: string[], crew: string | null = null, dest: GroupDest | null = null, convoy = false): Promise<string[]> {
     const st = useApp.getState();
     const me = { id: this.me.deviceId, name: st.me?.name ?? '' };
     const ok = ids.filter((id) => (dest ? this.groupAvailability(id) : this.availability(id)) === 'ok');
@@ -211,9 +264,11 @@ export class Companions {
     if (s && s.owner === me.id) {
       s = applyOp(s, me.id, { ...inviteOp(newSession(s.sid, me, invitees, crew, now), now), sid: s.sid }, now)!;
       if (dest && !s.dest) s = changeDest(s, dest);
+      // The re-sent invite carries the convoy, so members already in learn it from the same op.
+      if (convoy && dest && !convoyLeader(s)) s = applyConvoy(s, me.id, convoyOp(s, true, me.id, now));
     } else {
       if (s) await this.leaveDriveAlong();
-      s = newSession(`da-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`, me, invitees, crew, now, dest);
+      s = newSession(`da-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`, me, invitees, crew, now, dest, convoy && !!dest);
     }
     this.setSession(s);
     const op = inviteOp(s, now);
@@ -284,6 +339,160 @@ export class Companions {
     useDriveAlong.setState({ summary: null });
   }
 
+  // --- convoy (D65) ----------------------------------------------------------------------------------------------
+
+  /** Host: turn convoy mode on (leader = `leader`, default me) or off. Leader: hand the lead to `leader`. */
+  async setConvoy(on: boolean, leader: string = this.me.deviceId): Promise<boolean> {
+    const s = useDriveAlong.getState().session;
+    if (!s?.dest) return false;
+    const op = convoyOp(s, on, leader, Date.now());
+    const next = applyConvoy(s, this.me.deviceId, op);
+    if (next === s) return false;
+    this.onConvoyChange(s, next);
+    this.setSession(next);
+    await Promise.all(
+      Object.entries(next.members)
+        .filter(([id, m]) => id !== this.me.deviceId && (m.state === 'joined' || m.state === 'invited'))
+        .map(([id]) => this.crews.companionSend(id, 'drive-along', () => op)),
+    );
+    return true;
+  }
+
+  /** Follower: drive the leader's shared line from where I am (one via-constrained Directions call). */
+  async followLeader(): Promise<boolean> {
+    const s = useDriveAlong.getState().session;
+    const leader = s ? convoyLeader(s) : null;
+    const st = useApp.getState();
+    const line = leader ? useDriveAlong.getState().routes[leader]?.line : undefined;
+    if (!s?.dest || !leader || leader === this.me.deviceId || !line || !st.fix) return false;
+    if (budgetLevel('directions') === 'off') return false;
+    const rest = followLine(line, st.fix);
+    const q = rest ? currentRouteQuery(rest, st.fix.heading, excludeList(getRouteOptions())) : null;
+    if (!q) return false;
+    try {
+      const route = (await directionsQuery(q, voiceLang()))[0];
+      if (!route) return false;
+      this.startRoute(s.dest, route);
+      useDriveAlong.setState({ followDone: leader });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  dismissFollow(): void {
+    const s = useDriveAlong.getState().session;
+    const leader = s ? convoyLeader(s) : null;
+    if (leader) useDriveAlong.setState({ followDone: leader });
+  }
+
+  /** Convoy changes seen on this phone: share my route at once when I take the lead, withdraw it when I hand it over. */
+  private onConvoyChange(prev: DriveAlongSession, next: DriveAlongSession): void {
+    const me = this.me.deviceId;
+    const was = convoyLeader(prev) === me;
+    const now = convoyLeader(next) === me;
+    if (now && !was) {
+      this.lastRouteAt = 0;
+      this.lastRouteId = null;
+      void this.sendRoute(false);
+    } else if (was && !now && !next.shareRoute) void this.sendRoute(true);
+  }
+
+  private convoyMuted(s: DriveAlongSession): boolean {
+    return isConvoyMuted(convoyCrew(s, useApp.getState().crews));
+  }
+
+  /** Spoken convoy line, held back while a turn is close (the turn instruction wins); stale lines are dropped. */
+  private sayConvoy(text: string, names: string[], kind: 'guidance' | 'alert' = 'guidance'): void {
+    const next = useApp.getState().nav?.progress?.next?.distanceM ?? null;
+    if (next !== null && next < DRIVE_UX.maneuverQuietM) this.pendingSay = { text, names, kind, at: Date.now() };
+    else say(text, kind, names);
+  }
+
+  private flushSay(): void {
+    const p = this.pendingSay;
+    if (!p) return;
+    const next = useApp.getState().nav?.progress?.next?.distanceM ?? null;
+    if (Date.now() - p.at > 60_000) this.pendingSay = null;
+    else if (next === null || next >= DRIVE_UX.maneuverQuietM) {
+      this.pendingSay = null;
+      say(p.text, p.kind, p.names);
+    }
+  }
+
+  private clearConvoy(): void {
+    this.tracker.setLine(null);
+    this.callouts.clear();
+    this.regroupWatch.clear();
+    this.pendingSay = null;
+    if (useCompanionLive.getState().convoy) useCompanionLive.setState({ convoy: null });
+    const d = useDriveAlong.getState();
+    if (Object.keys(d.convoyOrder).length || d.convoyAlert) useDriveAlong.setState({ convoyOrder: {}, convoyAlert: null });
+  }
+
+  /** Standings, map order, gap callouts and regroup alerts (every ~2 s and on each leader route). */
+  private updateConvoy(): void {
+    const s = useDriveAlong.getState().session;
+    const leader = s ? convoyLeader(s) : null;
+    if (!s || !leader) return this.clearConvoy();
+    const me = this.me.deviceId;
+    const st = useApp.getState();
+    const nav = st.nav;
+    const line = leader === me ? (nav?.active ? nav.route.geometry : null) : (useDriveAlong.getState().routes[leader]?.line ?? null);
+    this.tracker.setLine(line, leader);
+    const live = useCompanionLive.getState().live;
+    // Re-feed the latest positions (a no-op unless the line just changed and the tracks were reset).
+    if (st.fix) this.tracker.update(me, { lat: st.fix.lat, lng: st.fix.lng, t: st.fix.t, spd: st.fix.speed });
+    for (const [id, c] of Object.entries(live)) this.tracker.update(id, { lat: c.lat, lng: c.lng, t: c.t, spd: c.spd });
+    const now = Date.now();
+    const fresh = (id: string) => id === me || (!!live[id] && now - live[id]!.receivedAt <= DRIVE_ALONG.staleMs);
+    const ids = [me, ...liveTargets(s, me)].filter(fresh);
+    const rows = this.tracker.standings(ids, new Set(Object.keys(s.arrived)));
+    const rel: ConvoyView['rel'] = {};
+    for (const id of ids) {
+      if (id === me) continue;
+      const r = this.tracker.relative(me, id);
+      if (!r) continue;
+      // "N lights": signals on my own route between us, when both of us are on it.
+      const g = live[id]?.rel?.alongGapM ?? null;
+      const myAlong = nav?.active ? (nav.progress?.alongM ?? null) : null;
+      const lights = g !== null && myAlong !== null ? lightsBetween(nav!.route.signalsAlongM, myAlong, myAlong + g) : null;
+      rel[id] = { m: r.m, s: r.s, lights };
+    }
+    useCompanionLive.setState({ convoy: { leader, rows, rel } });
+    const order = convoyOrderMap(rows);
+    if (JSON.stringify(order) !== JSON.stringify(useDriveAlong.getState().convoyOrder)) useDriveAlong.setState({ convoyOrder: order });
+
+    const muted = this.convoyMuted(s);
+    const moving = !!nav?.active || st.driving;
+    const vl = voiceLang();
+    const name = (id: string) => s.members[id]?.name ?? '';
+    // Gap callouts about my neighbours only (the car ahead of me, the car behind me).
+    const nb = neighbours(rows, me);
+    for (const [dir, n] of [['ahead', nb.ahead], ['behind', nb.behind]] as const) {
+      if (!n) continue;
+      let c = this.callouts.get(n.id);
+      if (!c) this.callouts.set(n.id, (c = new ConvoyCallouts()));
+      const label = gapLabel(dir, n.gapM, n.gapS, rel[n.id]?.lights ?? null);
+      const said = c.update(label, now);
+      if (said && moving && !muted && name(n.id)) this.sayConvoy(tIn(vl, dir === 'ahead' ? 'cv.say.ahead' : 'cv.say.behind', { name: name(n.id), gap: gapText(said, vl) }), [name(n.id)]);
+    }
+    // Regroup: every phone runs the same watches; only the leader and the car ahead of the gap are told.
+    const prefs = useConvoyPrefs.getState();
+    const lim = { m: prefs.regroupM, s: prefs.regroupMin * 60 };
+    for (const r of rows) {
+      let w = this.regroupWatch.get(r.id);
+      if (!w) this.regroupWatch.set(r.id, (w = new RegroupWatch()));
+      if (!w.update(r.arrived ? null : r.gapM, r.gapS, lim, now)) continue;
+      if (muted || !regroupAudience(rows, leader, r.id).includes(me) || !name(r.id)) continue;
+      const gl = gapLabel('behind', r.gapM ?? 0, r.gapS, null);
+      const gap = gl ? gapText(gl, vl) : '';
+      useDriveAlong.setState({ convoyAlert: { id: r.id, text: t('cv.fellBehind', { name: name(r.id), gap: gl ? gapText(gl, lang()) : '' }), at: now } });
+      if (moving) this.sayConvoy(tIn(vl, 'cv.say.regroup', { name: name(r.id), gap }), [name(r.id)], 'alert');
+    }
+    this.flushSay();
+  }
+
   async decline(from: string): Promise<void> {
     const inv = useDriveAlong.getState().invites.find((i) => i.from === from);
     useDriveAlong.setState((s) => ({ invites: s.invites.filter((i) => i.from !== from) }));
@@ -336,10 +545,11 @@ export class Companions {
     const prev = useDriveAlong.getState().session;
     if (!s) {
       this.cues.clear();
+      this.clearConvoy();
       useCompanionLive.setState({ live: {} });
       // Group drive: keep who arrived for the summary card.
       const summary = prev ? groupSummary(prev) : null;
-      useDriveAlong.setState({ session: null, routes: {}, regroup: null, ...(summary ? { summary } : {}) });
+      useDriveAlong.setState({ session: null, routes: {}, regroup: null, followDone: null, ...(summary ? { summary } : {}) });
     } else {
       const wasAll = prev ? allArrived(prev) : false;
       useDriveAlong.setState({ session: s, ...(!wasAll && allArrived(s) ? { summary: groupSummary(s) } : {}) });
@@ -378,7 +588,9 @@ export class Companions {
     const s = useDriveAlong.getState().session;
     if (op.op === 'invite') {
       if (s?.sid === op.sid) {
-        useDriveAlong.setState({ session: applyOp(s, from, op, now) });
+        const merged = applyOp(s, from, op, now);
+        if (merged) this.onConvoyChange(s, merged);
+        useDriveAlong.setState({ session: merged });
         return;
       }
       if (useDriveAlong.getState().invites.some((i) => i.from === from && i.op.sid === op.sid)) return;
@@ -416,6 +628,10 @@ export class Companions {
         return { live };
       });
     }
+    this.onConvoyChange(s, next);
+    const me = this.me.deviceId;
+    if (convoyLeader(next) === me && convoyLeader(s) !== me && !this.convoyMuted(next) && (useApp.getState().nav?.active || useApp.getState().driving))
+      this.sayConvoy(tIn(voiceLang(), 'cv.say.youLead'), []);
     this.setSession(next);
     const who = s.members[from]?.name ?? '';
     if (op.op === 'dest' && next.pendingDest && next.pendingDest !== s.pendingDest && !isMuted(from))
@@ -456,6 +672,7 @@ export class Companions {
         },
       },
     }));
+    this.tracker.update(m.sender, { lat: p.lat, lng: p.lng, t: p.t, spd: p.spd ?? null });
     const next = heard(s, m.sender, Date.now());
     useDriveAlong.setState({ session: next });
   }
@@ -471,6 +688,7 @@ export class Companions {
       return { routes };
     });
     this.updateRegroup();
+    if (from === convoyLeader(s)) this.updateConvoy();
   }
 
   private myRoute() {
@@ -520,8 +738,10 @@ export class Companions {
     if (now - this.lastRelAt >= RELATION_EVERY_MS) {
       this.lastRelAt = now;
       this.updateRelations(fix);
+      this.updateConvoy();
     }
-    if (s.shareRoute && s.owner === this.me.deviceId) void this.sendRoute(false);
+    // Convoy: the leader always shares the route (followers adopt it and gaps are measured along it).
+    if ((s.shareRoute && s.owner === this.me.deviceId) || convoyLeader(s) === this.me.deviceId) void this.sendRoute(false);
     void this.shareEtaTick();
   }
 
@@ -533,6 +753,8 @@ export class Companions {
     const out: Record<string, LiveCompanion> = {};
     const names = useDriveAlong.getState().session?.members ?? {};
     const vl = voiceLang();
+    const sess = useDriveAlong.getState().session;
+    const convoyOn = !!sess && !!convoyLeader(sess);
     for (const [id, c] of Object.entries(live)) {
       const rel = relation(fix, c, route);
       out[id] = { ...c, rel };
@@ -542,6 +764,8 @@ export class Companions {
       const said = cue.update(rel, now);
       const name = names[id]?.name ?? '';
       if (!said || !name) continue;
+      // In a convoy the gaps are called by the convoy callouts (along the leader's route).
+      if (said.kind === 'gap' && convoyOn) continue;
       if (said.kind === 'gap')
         say(
           tIn(vl, `da.say.${said.label.kind === 'here' ? 'away' : said.label.kind}`, {

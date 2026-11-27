@@ -1,5 +1,9 @@
 import Constants from 'expo-constants';
+import { apiKindOf, apiUnitsOf } from '@crewmap/shared/apiBudget';
 import { dedupeNearby, type LatLng } from '@crewmap/shared/geo';
+import { parseMatchLimits, type MatchResponse } from '@crewmap/shared/speedLimits';
+import { parseWalk, walkingUrl, type WalkRoute } from '@crewmap/shared/parking';
+import { TtlCache } from '@crewmap/shared/ttlCache';
 import {
   directionsUrl,
   parseMapboxRoute,
@@ -12,13 +16,17 @@ import {
   type RouteQuery,
   type Snapped,
 } from '@crewmap/shared/navigation';
+import { countRequest, countSaved } from './apiBudget';
 
 export const MAPBOX_TOKEN: string = (Constants.expoConfig?.extra?.mapboxPublicToken as string | undefined) ?? '';
 export const hasMapboxToken = (): boolean => MAPBOX_TOKEN.startsWith('pk.');
 
 const API = 'https://api.mapbox.com';
 
+/** Every Mapbox request goes through here: one daily counter per API (D60, Settings → Help → Diagnostics). */
 async function getJson<T>(url: string): Promise<T> {
+  const kind = apiKindOf(url);
+  if (kind) countRequest(kind, apiUnitsOf(url));
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Mapbox ${res.status}`);
   return (await res.json()) as T;
@@ -72,7 +80,23 @@ export interface SearchResult {
  * Search Box `/forward` — billed per request (25k/month free), unlike /suggest sessions (2.5k free). Debounced by
  * the caller (350 ms, ≥ 3 characters). Biased to the user's position, limited to Canada.
  */
+const searchCache = new TtlCache<SearchResult[]>(24 * 3600_000, 60);
+
 export async function searchForward(q: string, near: LatLng | null, lang: 'en' | 'fr' | 'ru'): Promise<SearchResult[]> {
+  // The same text near the same place (~2 km cells) today: the answer has not changed (typing back, re-opening search).
+  const cell = near ? `${Math.round(near.lat * 50)},${Math.round(near.lng * 35)}` : '-';
+  const key = `${q.trim().toLowerCase()}|${cell}|${lang}`;
+  const hit = searchCache.get(key, Date.now());
+  if (hit) {
+    countSaved('search');
+    return hit;
+  }
+  const out = await searchForwardNet(q, near, lang);
+  searchCache.set(key, out, Date.now());
+  return out;
+}
+
+async function searchForwardNet(q: string, near: LatLng | null, lang: 'en' | 'fr' | 'ru'): Promise<SearchResult[]> {
   const p = new URLSearchParams({ q, access_token: MAPBOX_TOKEN, language: lang, limit: '8', country: 'ca' });
   if (near) p.set('proximity', `${near.lng},${near.lat}`);
   const res = await getJson<{
@@ -91,6 +115,11 @@ export async function searchForward(q: string, near: LatLng | null, lang: 'en' |
   }));
 }
 
+/** Walking route to the parked car (D67): Directions `walking`, one route, overview geometry only. */
+export async function walkingRoute(from: LatLng, to: LatLng, lang: 'en' | 'fr' | 'ru'): Promise<WalkRoute | null> {
+  return parseWalk(await getJson<unknown>(walkingUrl(from, to, MAPBOX_TOKEN, lang)));
+}
+
 /** City name for a coordinate (Geocoding v6 reverse, temporary API — 100k/month free). Cached by the caller. */
 export async function reverseCity(p: LatLng): Promise<string | null> {
   const url = `${API}/search/geocode/v6/reverse?longitude=${p.lng}&latitude=${p.lat}&types=place&limit=1&access_token=${MAPBOX_TOKEN}`;
@@ -99,21 +128,17 @@ export async function reverseCity(p: LatLng): Promise<string | null> {
 }
 
 /**
- * Posted speed limit when not navigating: Map Matching on the last ~10 fixes with `annotations=maxspeed`
- * (100k/month free; called at most every 30 s while driving and only when the road may have changed).
+ * Posted speed limits when not navigating: Map Matching on the last ~10 fixes with `annotations=maxspeed`
+ * (100k/month free). Returns the limit at each of those fixes (the caller caches them per road cell, D60) and at
+ * the newest one.
  */
-export async function matchMaxspeed(fixes: { lat: number; lng: number; t: number }[]): Promise<number | null> {
-  if (fixes.length < 2) return null;
+export async function matchLimits(fixes: { lat: number; lng: number; t: number; heading?: number | null }[]): Promise<{ last: number | null; points: { lat: number; lng: number; heading: number | null; kph: number | null }[] }> {
+  if (fixes.length < 2) return { last: null, points: [] };
   const pts = fixes.slice(-10);
   const coords = pts.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   const ts = pts.map((p) => Math.floor(p.t / 1000)).join(';');
   const url = `${API}/matching/v5/mapbox/driving/${coords}?annotations=maxspeed&overview=false&timestamps=${ts}&tidy=true&access_token=${MAPBOX_TOKEN}`;
-  const res = await getJson<{ matchings?: { legs: { annotation?: { maxspeed?: ({ speed: number; unit: string } | { unknown: true } | { none: true })[] } }[] }[] }>(url);
-  const legs = res.matchings?.[0]?.legs ?? [];
-  const last = legs[legs.length - 1]?.annotation?.maxspeed ?? [];
-  for (let i = last.length - 1; i >= 0; i--) {
-    const m = last[i]!;
-    if ('speed' in m) return m.unit === 'mph' ? Math.round(m.speed * 1.609344) : m.speed;
-  }
-  return null;
+  const res = await getJson<MatchResponse>(url);
+  const per = parseMatchLimits(res, pts.length);
+  return { last: per[per.length - 1] ?? null, points: pts.map((p, i) => ({ lat: p.lat, lng: p.lng, heading: p.heading ?? null, kph: per[i] ?? null })) };
 }

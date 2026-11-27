@@ -50,7 +50,7 @@ export function classifyName(name: string, fallback: SpeechLang): SpeechLang | n
   if (EN_SUFFIX.has(last) && w.length > 1 && !/^\d+$/.test(w[w.length - 2] ?? '')) en += 3;
   if (/\b(saint|sainte|st|ste)-/i.test(n) || /^(saint|sainte|ste)$/.test(first)) fr += 3;
   else if (first === 'st' && !FR_ACCENT.test(n)) en += 1; // "St Clair Avenue", "St. Lawrence Street"
-  if (/[a-zà-ÿ]-[a-zà-ÿ]/i.test(n)) fr += 2; // hyphenated compounds: Camille-Roy, Pointe-Claire, Bras-d'Or
+  if (/[a-zà-ÿ]-[a-zà-ÿ]/i.test(n)) fr += 2; // hyphenated compounds: Camille-Roy, Pointe-Claire, Lac-Clair
   if (/\b[dl]['’]/i.test(n)) fr += 2;
   for (const x of w.slice(1)) if (FR_PARTICLE.has(x)) fr += 2;
   for (const x of w) if (EN_WORD.has(x)) en += 2;

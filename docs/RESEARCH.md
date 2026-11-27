@@ -226,3 +226,91 @@ inputs, not benchmarks.
   (per segment). 100 000 requests / month free, then billed per 1 000 (see Mapbox pricing page).
 - NIP-13 proof of work (https://github.com/nostr-protocol/nips/blob/master/13.md) and NIP-40 expiration are what the
   anonymous network uses for abuse resistance and expiry.
+
+## Route alternatives and ranking (2026-11-26, D59)
+- Mapbox Directions `driving-traffic` returns at most 1–2 alternatives; at peak hours on a regional trip both were
+  variants of one corridor and the motorway corridor came back only when forced through a via. `depart_at` changes
+  the set a lot (one run returned a 40 % longer out-of-province route as the first answer).
+- `exclude=point(lng lat)` is accepted on `driving-traffic` (and `driving`); the response must be checked, since an
+  exclusion the router cannot honour is not an error.
+- Tilequery (`/v4/mapbox.mapbox-streets-v8/tilequery`) only returns features from the tile at the point, whatever the
+  radius: no use for finding a motorway kilometres away.
+- Intersections carry `geometry_index` (route-level for single-leg queries) and `mapbox_streets_v8.class`, so road
+  class lengths can be measured per intersection span; steps entered from a ramp start with a `_link` class.
+- Router speeds on local streets / collectors in the test trip were plausible (40–55 km/h with 50–70 limits): local
+  shortcuts can be genuinely faster by its data at peak, so the ranking prefers main roads only inside a time band.
+- Standard style: custom layers are lit by the style's light preset unless `*-emissive-strength` is 1 (night / dusk
+  turned light grey lines near black).
+
+## OSM cameras, Overpass, right turn on red (2026-11-27, D61)
+- Overpass usage policy (wiki.openstreetmap.org/wiki/Overpass_API): overpass-api.de < 10 000 queries/day and < 1 GB/day,
+  /100 for regular use, counted over all users of an app; send User-Agent/Referer; pause after 429/406; commercial use
+  self-hosts. maps.mail.ru: "no requests limitations", any project. private.coffee (ex kumi): no rate limit, notify for
+  large projects. On 2026-11-27 overpass-api.de answered 200 and also 502 "at capacity"; kumi timed out once and served
+  data with a July 2026 base timestamp.
+- Query used: `rel["type"="enforcement"]["enforcement"~"^(maxspeed|traffic_signals|…)$"](bbox)->.e;
+  node(r.e:"device")->.d;(node["highway"="speed_camera"](bbox);.d;);out body;.e out body;`. Downtown Toronto returned
+  9 camera nodes (some with `direction` "235" / "ENE", `maxspeed`, `name`, `ref`) and one enforcement relation whose
+  members have empty roles (mappers do not always use `device`).
+- Ontario 511 developer API: "Requires a developer key", account sign-up; `GET /api/v2/get/event` without key →
+  `Invalid Key`. Terms not public.
+- ECCC GeoMet OGC API `collections/weather-alerts/items?bbox=` returns live GeoJSON polygons with en/fr alert names.
+- Right turn on red: SAAQ (saaq.gouv.qc.ca/en/road-safety/behaviours/turning-right-red-light) and quebec.ca: allowed in
+  Québec except on the island of Montréal and where signed; regulation C-24.2, r. 9.1 designates the municipalities.
+
+## Source sweep, 2026-11-27 (not yet in the repo)
+| Source | Licence / terms | Access | Fit |
+|---|---|---|---|
+| Open Charge Map | Per-record licence; open-data filter gives CC BY-SA 3.0 (some CC0 / CC BY 4.0); attribution must be visible | REST `api.openchargemap.io/v3/poi`, free key | Good: EV chargers along route; filter to open records only |
+| NREL Alt Fuel Stations (incl. NRCan Canadian data) | Reported CC-BY on data.gov; terms page not read yet | REST, free 40-char key | Good for Canada/US chargers; read terms before use |
+| OSM `amenity=charging_station` / `fuel` / `parking` via existing Overpass client | ODbL | Overpass (D61 client) | Best fit: no new terms; reuse cell cache |
+| MTMD `ms:infos_cameras`, `ms:stations_meteoroutieres`, `ms:evenements_inondation` | CC-BY 4.0 | WFS already used (D44) | Cheap: traffic-camera stills, road-weather, flood closures |
+| ECCC GeoMet weather alerts | Open Government Licence – Canada | OGC API (polygons) | Deferred in D61; still a good free weather-on-road source |
+| Ontario 511 | Key + terms behind login | — | Rejected (D61) |
+| US state 511 / WZDx work-zone feeds (USDOT WZDx registry) | Mostly public domain / open, per-state | GeoJSON feeds | For US trips; per-feed terms check |
+| Valhalla / OSRM / GraphHopper (self-host) | MIT / BSD-2 / Apache-2.0 | Docker on relay PC | OSRM planned (D60 C); Valhalla adds time-dependent costing |
+| Régie essence Québec `regieessencequebec.ca/stations.geojson.gz` | Official (Loi sur les produits pétroliers art. 67.1); no licence text, Régie says third parties may reuse the download | Public GeoJSON, CORS *, ETag, regenerated every few min | Used (D64): station prices, regular/super/diesel |
+| Gas prices (GasBuddy, CAA) | Proprietary, no public API | — | Skip |
+Unverified: NREL terms page, WZDx per-state licences, OCM current rate limits.
+Checked 2026-11-27 (D64): `ms:stations_meteoroutieres` = frost/thaw depth stations (daily gel/degel), not road weather;
+`ms:infos_cameras` gives a Québec 511 viewer page per camera (683 cameras), no still-image URL in the data;
+`ms:evenements_inondation` was already used. Régie feed: 2 477 stations, 7 176 price rows (Régulier 2 477, Super 2 476,
+Diesel 2 223), 250 marked unavailable, no per-station timestamp; xlsx has the same columns (no notice sheet).
+
+## Ideas backlog (2026-11-27, ranked by value/effort)
+Done as D63: road roughness/potholes from IMU, learned stop delays, leave-by from crew history.
+1. **Crew lane memory**: record which lane offset (GPS lateral offset over many crew drives) precedes each split; warn
+   "stay left" before ramps Google gets wrong. Medium effort; needs better than 5 m accuracy, so mostly highways.
+2. **Convoy mode**: when 2+ friends navigate to one place, share the leader's route and announce gaps ("Sam is 2 lights
+   back"); pick a route all can follow. Medium; builds on drive-along (D58) and group drive.
+3. **Ambient safety check-in**: a trip that stops for a long time in an unusual place (not a saved place, not a known
+   stop cell) asks the driver once, then tells the crew only if unanswered. Low effort; tripDetector + places.
+4. **Learned parking**: where each friend parks and how long they walk afterwards → "park at X, 4 min walk" and true
+   door-to-door ETA. Low–medium; walk-away dwell already detected.
+5. **Crew price board**: one-tap fuel price reports at a station (OSM `amenity=fuel` id), expire after 24 h, shared
+   in the Yjs doc. Low; no outside source needed.
+6. **Trip memories**: auto-made recap of a group outing (route, who joined, emotes, photos the crew chose) kept on
+   device. Medium; P2P photo transfer is the hard part.
+7. **Offline crew mesh**: when no network, relay location over BLE/Wi-Fi Direct between phones in a convoy. High;
+   platform work in `packages/platform`.
+8. **Personal speed-trap priors**: where crew drivers braked hard below the limit repeatedly with no report → hidden
+   enforcement spots. Medium; risk of false positives, keep it private to the crew.
+9. **Signal phase learning**: from many crew stops at one light, estimate cycle length and suggest a speed to arrive
+   on green. High; needs many observations per light and accurate timing.
+10. **Road-weather fusion**: combine MTMD road-weather stations + ECCC alerts + crew wiper/ABS-like signals (hard brakes on
+    wet roads) into a per-route "slippery" warning. Medium.
+
+## Free trip feeds (2026-11-27, D70)
+Used: ECCC weather alerts (no key, OGC API, bbox query ~1 MB for QC+ON, updated on issue; ECCC end-use licence with
+attribution); MTMD `ms:conditions_routieres` (already in D44 feed, CC-BY 4.0); CBSA current border wait times CSV
+(OGL – Canada, hourly per office, ETag; no coordinates, so a static port table; only Canada-bound waits at most QC ports);
+Wikipedia Action API geosearch + intro extract (CC BY-SA 4.0, Api-User-Agent header, no hard read limit).
+Rejected / deferred:
+- MTMD `stations_meteoroutieres`: only daily freeze/thaw counts, no live surface temperature.
+- MTMD `liaison_maritime`: static ferry lines, no status; STQ live status has no open feed.
+- MTMD `villagerelais` (rest villages, CC-BY 4.0): good candidate as a POI kind once D64's POI layer settles.
+- Ontario 511 road conditions: key + terms behind login (as D61). Ontario coverage = ECCC only.
+- Google / Yelp / Tripadvisor reviews: licences forbid this use. Open-government restaurant inspections (Québec MAPAQ
+  "condamnations") are offence lists, not ratings: not shown.
+- OSM opening_hours / website / phone / wheelchair: belongs in D64's `osmPois.ts` query; left to that work.
+- School-zone / construction speed data: no free QC/ON feed beyond what OSM maxspeed:conditional already gives.

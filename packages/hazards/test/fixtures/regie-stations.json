@@ -1,0 +1,151 @@
+{
+ "type": "FeatureCollection",
+ "metadata": {
+  "generated_at": "2026-11-27T04:20:00.3810129Z",
+  "excel_url": "/data/stations-20261127042000.xlsx",
+  "total_stations": 2477,
+  "excel_size_bytes": 197962
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.019574,
+     48.246759
+    ]
+   },
+   "properties": {
+    "Name": "2642-4101 Québec Inc.",
+    "brand": "Shell",
+    "Status": "En opération",
+    "Address": "230 av. Murdoch, Rouyn-Noranda",
+    "PostalCode": "J9X 1E7",
+    "Region": "Abitibi-Témiscamingue",
+    "Prices": [
+     {
+      "GasType": "Régulier",
+      "Price": "166.4¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Super",
+      "Price": "204.4¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Diesel",
+      "Price": "279.9¢",
+      "IsAvailable": true
+     }
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.038512,
+     48.241622
+    ]
+   },
+   "properties": {
+    "Name": "9070-0451 Quebec Inc.",
+    "brand": "Shell",
+    "Status": "En opération",
+    "Address": "215 boul. Rideau, Rouyn-Noranda",
+    "PostalCode": "J0Z 2X0",
+    "Region": "Abitibi-Témiscamingue",
+    "Prices": [
+     {
+      "GasType": "Régulier",
+      "Price": "164.4¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Super",
+      "Price": "192.4¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Diesel",
+      "Price": "259.9¢",
+      "IsAvailable": true
+     }
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -77.63702,
+     48.446314
+    ]
+   },
+   "properties": {
+    "Name": "9097-7679 Québec inc.",
+    "brand": "Axco",
+    "Status": "En opération",
+    "Address": "14 rte 397 nord, Barraute",
+    "PostalCode": "J0Y 1A0",
+    "Region": "Abitibi-Témiscamingue",
+    "Prices": [
+     {
+      "GasType": "Régulier",
+      "Price": "166.9¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Super",
+      "Price": null,
+      "IsAvailable": false
+     },
+     {
+      "GasType": "Diesel",
+      "Price": null,
+      "IsAvailable": false
+     }
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -79.014941,
+     48.235466
+    ]
+   },
+   "properties": {
+    "Name": "9326-8720 Québec Inc.",
+    "brand": "Esso",
+    "Status": "En opération",
+    "Address": "264 av. Larivière, Rouyn-Noranda",
+    "PostalCode": "J9X 4H2",
+    "Region": "Abitibi-Témiscamingue",
+    "Prices": [
+     {
+      "GasType": "Régulier",
+      "Price": "164.4¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Super",
+      "Price": "197.4¢",
+      "IsAvailable": true
+     },
+     {
+      "GasType": "Diesel",
+      "Price": "279.4¢",
+      "IsAvailable": true
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -14,6 +14,7 @@ import { pageX, useLayoutMode } from '../ui/layout';
 import { ListRow } from '../ui/screens-common/Layout';
 import { ConfirmSheet } from '../ui/ConfirmSheet';
 import { JoinCodeCard, JoinCodeField } from '../ui/JoinCode';
+import { CheckInOptIn, useCheckInChoice } from '../ui/safety/CheckInOptIn';
 import { inviteErrorMessage } from '../core/inviteErrors';
 import { AvatarStill } from '../ui/map/Sprites';
 import { useNow } from '../ui/friend/useNow';
@@ -102,7 +103,7 @@ export default function Crew() {
     if (!n || !me) return;
     setBusy(true);
     try {
-      if (edit === 'new') setSel(await engine.crews.create(n, me.name));
+      if (edit === 'new') setSel(await engine.crews.create(n, me.name, { checkIn: useCheckInChoice.getState().on }));
       else if (circle) {
         const prev = circle.name;
         await engine.crews.rename(circle.id, n);
@@ -128,6 +129,7 @@ export default function Crew() {
       {edit && (
         <Card style={{ gap: 12 }}>
           <Field testID="crew-name" label={edit === 'new' ? t('onb.crewName') : t('crew.rename')} value={name} onChangeText={setName} autoFocus />
+          {edit === 'new' && <CheckInOptIn />}
           <Button testID="crew-name-save" loading={busy} disabled={!name.trim()} label={edit === 'new' ? t('crew.create') : t('common.save')} onPress={() => void submitName()} />
         </Card>
       )}

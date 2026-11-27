@@ -1,0 +1,78 @@
+{
+ "note": "Synthetic: fictional house and driveway near a public park (Parc Jarry, Montréal). Must be skipped.",
+ "spot": {
+  "lat": 45.534,
+  "lng": -73.628
+ },
+ "osm": {
+  "version": 0.6,
+  "generator": "synthetic",
+  "elements": [
+   {
+    "type": "way",
+    "id": 4,
+    "tags": {
+     "highway": "residential",
+     "name": "Rue des Érables"
+    },
+    "geometry": [
+     {
+      "lat": 45.5337842,
+      "lon": -73.6290271
+     },
+     {
+      "lat": 45.5337842,
+      "lon": -73.6269729
+     }
+    ]
+   },
+   {
+    "type": "way",
+    "id": 5,
+    "tags": {
+     "highway": "service",
+     "service": "driveway"
+    },
+    "geometry": [
+     {
+      "lat": 45.5337842,
+      "lon": -73.6279872
+     },
+     {
+      "lat": 45.534054,
+      "lon": -73.6279872
+     }
+    ]
+   },
+   {
+    "type": "way",
+    "id": 6,
+    "tags": {
+     "building": "house"
+    },
+    "geometry": [
+     {
+      "lat": 45.534018,
+      "lon": -73.6279486
+     },
+     {
+      "lat": 45.534018,
+      "lon": -73.6277946
+     },
+     {
+      "lat": 45.5341259,
+      "lon": -73.6277946
+     },
+     {
+      "lat": 45.5341259,
+      "lon": -73.6279486
+     },
+     {
+      "lat": 45.534018,
+      "lon": -73.6279486
+     }
+    ]
+   }
+  ]
+ }
+}

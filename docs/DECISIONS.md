@@ -517,3 +517,436 @@ pops and the chip only, voice ducked and only when allowed, no stings. Ride mute
 it while driving) silence emotes, quips and chat notices until the ride ends (navigation ends, or 5 min not driving).
 Muted emotes still reach the friend log and are counted into the friend's emote digest. Rejected: imitating any
 existing voice; on-device TTS for presets (voice quality and offline availability vary by phone).
+
+**D54 — Two-colour looks: optional trims, lens colour, natural ride materials.** Audit: hair ties, top trims (jersey
+collar/cuffs/number, hoodie strings, jacket pockets), bottom stitching/stripes, hat bands/pompoms/rims, extra straps
+and chains, all lenses and most ride secondary parts were fixed colours; glasses had no finish; the cart basket, the
+skateboard wheels and the scooter stem ignored the ride colours. Now: each fixed trim of a slot is its own
+`<slot>2_<name>` material and one optional trim colour per item (`trim.{hair,top,bottom,hat,accessory}`) repaints them;
+unset, every style keeps its built-in trims (hair ties and hat bands keep the auto accent). Optional `lens` (`#RRGGBB`
+or `clear`): dark lenses (`lens_dark/mirror/neon`) take the colour as is, tinted ones (`lens_tint/pink/amber/red3d/
+blue3d`) blend 0.6 toward it, the new clear lenses of open frames (round, wire, square, nerd, catEye, monocle) blend
+0.3 and stay see-through; `clear` turns every lens see-through (opacity 0.25, no glow). `glasses` joined
+`FINISH_ITEMS` (frame). Rides: `accent_<name>` parts (rims, seats, chrome frames, gold trims, tub rim) take the
+optional accent, unset they keep their look; `paint_<name>` natural materials (hot dog bun, wooden skateboard deck,
+rug) stay natural until the rider picks a paint colour (`tint: true`, blend 0.5). Every ride now has an accent. All new
+fields are optional, so old payloads parse and old peers ignore them; no new palette slots (an old build's
+`isAvatarConfig` still passes). Rejected: palette slots per trim (a default would repaint existing looks) and a `clear`
+finish (finishes are wire-global and would also show for car paint). Old skateboard and carpet looks change from the
+paint colour to the natural deck/rug until re-tinted.
+
+## D55 — Crew clusters and group scenes on the home map (2026-11-26)
+Friend markers closer than `CLUSTER.overlapPx` (52 dp; 64 while driving/navigating) on screen merge into one cluster
+(single-link, `packages/shared/src/crewCluster.ts`). Screen points come from `getPointInView` when the camera settles
+(existing CameraGestureObserver) or presence changes, throttled to 400 ms: no per-frame work, no onCameraChanged.
+Tap: our own Web-Mercator fit (`fitZoom`, padded, capped at `maxZoom` 19) then `setCamera`, because rnmapbox
+`fitBounds` has no max zoom and over-zooms on near-identical points; at max zoom the tap opens a list sheet whose rows
+are the existing `LiveRow` and open the usual crewmate screen. Members within `sameSpotM` (25 m, same building) draw a
+group scene: frozen cells of each member's EXISTING walk sheet (3 frames x 16 headings) placed by 2D transforms,
+from a generated library (`groupPoses.ts`: 12 formations x 5 frame patterns x 4 leans x mirror, deduped; >=100 per
+count 2..8), picked by FNV-1a of sorted member ids. Rejected: a new 3D group bake (cost, bake time per combo);
+Mapbox ShapeSource clustering (works on symbol layers, our markers are RN MarkerViews with baked sprites).
+
+## D56 — Per-friend sharing: Same as crew | Custom, stats overridable (2026-11-26)
+- A friend's sharing is a two-way segmented control: **Same as crew** (no override; a read-only summary of what they
+  see now: location level + the crew that grants it, speed, battery, stats) or **Custom** (a full `UserOverride`).
+- Several shared crews: each crew sends its own `override ?? crew` data, so the summary is the most permissive crew
+  (`shareSummary`, packages/p2p/src/shareSummary.ts); the location level names that crew.
+- Switching to Custom pins every override field to what the friend sees now (`customFromSummary`), so nothing changes
+  until a toggle does; back to Same as crew clears the override (`setOverride({})`), same persistence and re-publish.
+- Mode is derived, not stored: override present => custom (`shareUserMode`).
+- Stats became overridable per friend (`stats`, `trips`, partial `statsVis` on `UserOverride`) because the stats
+  aggregate is sealed per recipient; `statsAllowed(resolvedPolicy, group)` is the one gate the sender calls. Places,
+  emotes and chat stay crew-wide (crew Yjs doc / crew channel).
+- Crew screen and Custom share one component (`ui/share/ShareFields.tsx`): location segmented, data switches, stats
+  fields. Older peers ignore the new override fields (they are local only).
+
+## D57 — Leaderboard aggregates and the You | Leaderboard stats tab (2026-11-26)
+- **Headline stats** are km driven and km walked for the selected period (calendar week Monday-based / calendar month /
+  all time, local time zone, existing `periodStart`). The active-day streak stays computed and shared (old peers and the
+  weekStreak badge depend on it) but is shown only as a minor line.
+- **Leaderboard data** is a new content-minimal `stats-agg` message (protocol 9, cap `statsAgg` = 8192): per period, only
+  counts and totals (`packages/shared/src/stats/aggregate.ts`): drives, km driven/walked, walks, longest km, score +
+  scored km, events/100 km, night/early starts, distinct places, home leaves/returns, no-hard-brake streak, plus a
+  period key `k` so receivers drop last month after rollover. No routes, places, ids or coordinates.
+- **Policy**: built per recipient and box-sealed to that friend (like companions), every field group passed through
+  `statsAllowed(effective(crew, friend), group)` (D56) before sealing. Stats off = nothing sent. Home counts got their
+  own visibility group `home` (default off) since they reveal routine. Receiver re-validates with a strict whitelist.
+- **Cost**: event-driven only (start, maintenance every 6 h, after a saved drive, on policy change); per-peer dedup,
+  unchanged payloads resent at most daily, at most one flush a minute; a member heard from for the first time this
+  session gets ours once (late joiners, no polling). Known older builds are skipped; unknown kind is ignored by them.
+- **Categories**: driven, walked, longest trip, drives, best score and smoothest (both need ≥ 20 km), no hard brakes,
+  home runs, night owl, early bird, places. No top speed (don't reward speeding). "Time with the crew" skipped: no data
+  source exists. Ties share a rank, order by km then id. A friend without a current aggregate, or hiding a group, is
+  simply absent from that card.
+
+## D58 — Friendly pings, smart quick picks and the catch-up fanfare (2026-11-26)
+- **New presets without a protocol bump**: 7 pings (thinking of you, I'm here, need a ride?, welcome home, charge up,
+  drive safe, you rock). On the wire they go out as their nearest legacy preset plus `p2` (`toWire`/`fromWire`):
+  older builds validate and show the fallback, newer builds read `p2`, and an unknown `p2` from a future build degrades
+  to the fallback. No capability bit needed, so `protocol.ts` is untouched. Pings reuse their fallback's voice lines
+  and sting (no new audio).
+- **Picker**: one vertical ScrollView is the formSheet's only scroller (detents 0.7/1). Root cause of the thin, stuck
+  "Recent": the old layout put a flex:1 ScrollView between fixed siblings (mutes, banners, record button) in a 0.6 sheet;
+  on Android the sheet only hands drags to a nested-scroll child, so the outer list never scrolled and only the inner
+  nestedScrollEnabled Recent list did. Recent is now a horizontal snap row of chips (who · what · when, tap to resend).
+- **Quick picks** (`shared/emoteSuggest`): reply to their last emote, their place moment (arrive home → welcome home),
+  low battery (when shared) → charge up; while they drive only the driving-safe set. Favourites = long-press pins, then
+  presets sent ≥ 2× in 30 days. ×1/×3/×5 bursts (one at a time to a driving friend). Two-way daily streak chip.
+- **Notifications**: sent at receive time when not foreground (a JS timer may never fire in the background), one per
+  sender with a running count and last 3 emoji; actions Send back + two quick pings; the notification is dismissed
+  after an action; "Send back" before the engine runs is kept in the outbox.
+- **Catch-up**: seen keys persisted (a relay replay after a cold start never re-celebrates), quips join the queue,
+  one card per sender in a root box-none layer (works when opened from a tap onto another screen), tap to skip, Skip
+  for all; driving/navigating: tiny toast, sound only under the existing driving-sound rule.
+
+## D59 — Route chooser: corridor probes, road-class costs, corridor labels, colours, minimum fit span (2026-11-26)
+- **Root causes (owner report: a back-street shortcut recommended over the motorway and the regional road).**
+  (1) Discovery split on unplausible base routes (a long out-of-the-way alternative took two of three splits) and at
+  peak hours never probed the motorway corridor: Directions' own 1–2 alternatives were both regional-road variants, and
+  sibling-exit / divergence vias filled every slot with near-copies of one corridor. A forced via on the motorway came
+  back within a few minutes of them. (2) `fastRoadM` classified each whole step by its first intersection, so steps
+  entered by a ramp counted as non-motorway (base motorway route measured ~0.54 instead of ~0.85), weakening the tie-break.
+  (3) The tie-break ignored time inside the band: a route ~3 min slower won on 1–2 fewer lights. (4) Labels compared each
+  route with its closest twin, so two motorway variants differing only near the door were named by the last street,
+  bare refs ("50") were shown, and a ref-less step of a numbered highway counted as a different road.
+  Learned habit (up to 5 trips × 60 s) on the owner's phone may also have contributed; it is not visible off-device.
+- **Discovery** (`DISCOVERY.callBudget` 8 → 10): splits and probes seed only from plausible base routes; two corridor
+  probes run with the splits: *avoid* = the fastest base route again with `exclude=point(lng lat)` on its longest
+  mid-route step (results that pass within 60 m of the point are dropped: an ignored exclusion), *stay* = at the first
+  motorway/trunk exit with ≥ max(5 km, 15 %) of the trip left, a bearing-constrained silent via 800 m down the mainline
+  (cached at the point the route really passed). Tilequery was tried and dropped: it only sees one tile.
+- **Selection**: end zones (max(1 km, 10 % of length) ≤ 8 km) are ignored for a second distinctness test; routes that
+  differ mid-route go first, then at most one end-only variant; the quickest route with ≥ 40 % motorway keeps a slot.
+- **Ranking** (`CANDIDATES.recommend`): `expectedS` (ETA: live + control allowance × learned correction) is unchanged;
+  ranking uses `costS` = expectedS + 10 s/km local street + 4 s/km collector + 5 s/left turn + 3600 s on a closed
+  incident + the app's hazard cost (`routeHazardCostS`: closure 900 s, crash 120 s, works 45 s, hazard 30 s, pothole
+  5 s × confidence, police/cameras 0, cap 1800 s, direction-aware). Eligible band = max(150 s, 4 %) + motorway share ×
+  120 s; inside it the lowest cost + predictability penalty wins. Off-route reroutes and the in-drive re-evaluation
+  use the same `recommend`, re-evaluation decides on `costS`.
+- **Labels**: per-intersection road classes and a cross-candidate name → ref map; refs shown the local way (Québec
+  "A-n" for 1–99 / 400+, "R-n" for 100–399, direction suffixes dropped; elsewhere as published); end-zone road weighs
+  0.2; a numbered / major road carrying ≥ 15 % joins as corridor context ("A-n, A-m", "R-n, Montée …"); texts are
+  unique (fallback: the route's two main corridor roads, then a letter). Tags: Fastest, Highway, Fewer turns, No tolls,
+  Shortest; each card shows "+N min" vs the fastest and a colour chip.
+- **Colours**: alternatives were near-black because Standard-style lighting shades custom layers at dusk / night
+  (emissive strength 0 by default) and they were grey. All our route lines now set `lineEmissiveStrength: 1`; each
+  candidate has its own non-traffic colour (`ui/map/routeColors.ts`), the selected one wider with a casing and traffic
+  colours only on slow stretches; data-driven colours use `coalesce` so a missing property can never render black.
+- **Camera fit** (`shared/cameraFit.ts`, `CAMERA_FIT`): fits show at least 300 m each way and never end past zoom
+  17.5 (route preview and "show us both"); the crew-cluster tap keeps its D55 max zoom 19 by design.
+- **Hazards**: a report whose known heading differs from the route direction by > 120° (other carriageway) is neither
+  announced nor priced.
+- **Follow-ups**: a re-evaluation offer is decided on `costS` but says / shows only expected-time savings (a closure
+  ahead is never announced as "saves 60 min"); hazards Mapbox also reports are not charged (already in its durations,
+  and the preview republishes the selected route's incidents, which would bias against that route); of two end-only
+  twins the faster is labelled by its corridor and only the slower one by its end roads. Planned works / closures
+  that have not started are already dropped by the feeds (Québec 30 min lead, Montréal future starts).
+
+## D60 — ETA truth and Mapbox request budget (2026-11-26, in progress)
+- **Evidence.** On public-landmark test trips at a weekday evening, Mapbox `congestion` was "unknown" (no live probe
+  data) on 0 % of motorway length, 4 % primary, 21 % secondary, 39 % tertiary and 96 % local street length. A live
+  motorway jam is priced, the same jam spilling onto a parallel shortcut is not (historical speeds only), so a
+  shortcut is optimistic exactly when it is recommended. `depart_at` runs return no live data at all (predictive only).
+  Not proven on the owner's own drives: the last pulled database had no route traces.
+- **Ranking** (`shared/navigation/etaBias.ts`, `recommend.ts`): per road group (motorway/trunk, primary/secondary,
+  tertiary, local) and period (weekday peak / other) a ridge-fitted multiplier of actual / predicted, shrunk to 1 or to
+  crew multipliers; habit drives (past trips vs the router's typical time, no preview needed) and preview samples (now
+  with per-group parts and origin→destination leg time from the fixes). Route correction shrinks toward the group
+  factor. Peak-only ranking costs: 0.5 σ risk, 8 % of no-live-data time (fades with measured drives); leaving the
+  highway at peak needs max(240 s, 8 %) lower cost. Habit bonus off once a route has ≥ 2 measured drives. ETA shown
+  changes only with measured drives.
+- **Requests**: `shared/apiBudget.ts` daily counters + soft/hard caps (all Mapbox calls via `getJson`); result cache
+  (4 min) and discovery modes full / warm (weekly per O/D and period) / lean (`navigation/routeCache.ts`); avoid probe
+  skipped when a motorway and another corridor are already found; speed-limit cell cache (`shared/speedLimits.ts`)
+  before Map Matching; search answer cache; re-evaluation gated by the budget.
+- **Crew**: multipliers ride in the sealed `stats-agg` payload (`eb`, only to friends who may see my stats).
+
+## D61 — OSM fixed cameras via Overpass, no right turn on red on the island of Montréal (2026-11-27)
+- **OSM cameras** (`packages/hazards/src/sources/osm.ts`, source id `osm`): nodes `highway=speed_camera` plus `device`
+  members of `type=enforcement` relations (`maxspeed | traffic_signals | average_speed | mindistance |
+  red_light_camera`) become `camera` hazards (subtype `speed_camera` / `red_light` / `average_speed`, heading from
+  `direction` degrees or cardinal). Fills the gap outside Québec (Ontario ASE cameras, red-light cameras, abroad); in
+  Québec it merges with MTMD photo radars (60 m camera radius, MTMD ranks first). Licence ODbL 1.0, credit
+  "© OpenStreetMap contributors, ODbL" on the hazard sheet and in Help → licences.
+- **Load on a volunteer service.** overpass-api.de policy (OSM wiki "Overpass API"): < 10 000 queries and < 1 GB a day
+  summed over all users of an app, divide by 100 for regular use, identify the app (User-Agent), back off after
+  429/406. We fetch 0.5° cells, each at most once a week, ≤ 4 cells per cycle, only on the chore peer (charging +
+  Wi-Fi, someone driving or the map open), exponential backoff 15 min → 24 h with rotation to maps.mail.ru (VK Maps,
+  documented "no request limitations, use in any project"). A crew of a few phones makes a handful of queries a week.
+  Cells persist on the phone (`osmCameras` kv) and every phone reads its cache with `cached()` (no network); results
+  are also shared with the circle. Endpoints are a constructor parameter, so a self-hosted Overpass or the home relay
+  (D13) can replace them. private.coffee/kumi was not used (asks for notice for larger projects; its data lagged months).
+- **Right turn on red** (`shared/navigation/rightOnRed.ts`): banned island-wide on Montréal (SAAQ "Turning right at a
+  red light"; regulation C-24.2, r. 9.1), allowed elsewhere in Québec. Right / sharp-right turns whose maneuver
+  intersection has a traffic signal and lies on the island are counted (`controls.noRedRightTurns`) and cost
+  `noRedRightS` = 8 s each in ranking only (never in the ETA). The island outline is coarse (~0.5–1 km); posted
+  local bans elsewhere are unknown to us.
+- **Rejected.** Ontario 511 (`511on.ca/api/v2`): now requires a registered account and per-developer key; its terms
+  sit behind the login, so the licence could not be checked: skipped until the owner registers and reads them.
+  Environment Canada weather alerts (`api.weather.gc.ca/collections/weather-alerts`, live, en/fr): polygon alerts do
+  not fit the point hazard model and need route-overlap UI; deferred. OSM maxspeed / signals via Overpass for routing:
+  per-route corridor queries would be heavy Overpass load and Mapbox already returns maxspeed and signals.
+  Waze Live Map / scraping: still excluded (D40).
+
+**D62 — Waze Live Map adapter re-enabled (owner decision, supersedes D40).** The owner asked for it again, as the original
+spec (F4) required. `HazardService` takes an optional `WazeLiveMapSource`; `fetchWaze` uses it first (default
+`wazeEnabled: true`, owner-signed kill switch), and falls back to the paid API (still off, cap 0) only when the live
+map is killed or blocked. Kept limits: ≤ 1 request / 2 min / area, only while someone drives or the map is open, bbox of
+the route or view, results shared encrypted with the crew, health check (blocked / shape-changed retry ≥ 30 min), "Waze"
+attribution and age. No proxies, spoofed tokens or challenge solving: if blocked, it degrades to the other sources.
+The endpoint is an undocumented private API and may break or be refused at any time.
+
+## D63 — Crew-sensor insights: road roughness, learned stop delays, leave-by (2026-11-27)
+Pure logic in `packages/shared/src/insight/` (tunables in `insight/thresholds.ts`, Vitest `shared/test/insight.test.ts`);
+not wired into the app yet.
+- **Road roughness / potholes** (`roughness.ts`): the IMU linear-acceleration magnitude the trip pipeline already samples
+  is placed on the latest good fix (accuracy 25 m or better, at least 30 km/h, fix at most 2 s old), scaled by
+  sqrt(54 km/h / speed) and pooled as RMS per 50 m grid cell. Only cell values are shared, never traces. A spike of
+  6 m/s² or more counts toward a pothole suggestion only when 2 or more distinct drivers hit one in the same cell, so a
+  dropped phone or one kerb does not create a report. Google and Waze rely on manual reports. Ours come from the crew
+  driving past, and nothing they don't already share leaves the phones.
+- **Learned stop delays** (`stopDelays.ts`): 5–180 s stops inside drives, pooled per 30 m cell and 3 h band, give the
+  median wait once 3 or more are seen. This is meant to replace the fixed per-signal and right-on-red seconds (D59/D61)
+  with measured ones where the crew drives. The final park (over 180 s) is excluded.
+- **Leave-by** (`leaveBy.ts`): the 80th-percentile duration of the crew's own past trips between two saved places, on
+  the same kind of day (weekday or weekend) and within 90 min of the planned start, plus 2 min buffer. Null below 3
+  trips, so the caller falls back to the router ETA. It costs no API calls.
+Why: these use data only the crew's phones hold, they need no paid source, and they fit the existing pipeline (IMU,
+trip traces, places). Next: aggregate the cells in `stats-agg`, feed `expectedStopS` into `roadPenaltyS`, and show a
+leave-by chip on place cards.
+
+## D64 — Free map-point feeds: official Québec fuel prices, MTMD traffic cameras, OSM fuel/chargers, optional Open Charge Map (2026-11-27)
+New `packages/hazards/src/pois/` (a `Poi` model next to hazards: fuel / charging / trafficCamera; tests
+`hazards/test/pois.test.ts` on recorded fixtures), app side `apps/mobile/src/core/pois.ts`, map layer
+`ui/map/PoisLayer.tsx`, point sheet `app/poi/[id].tsx`, fuel search `ui/FuelResults.tsx`.
+- **Fuel prices: Régie essence Québec (official, station level).** Since 2026-04-01 every Québec retailer must report
+  each regular / super / diesel price change to the Régie de l'énergie (Protégez-vous, March 2026: at most 5 minutes
+  after the change). The legal basis is cited by a Régie document as art. 67.1 of the Loi sur les produits pétroliers
+  (amended by Bill 69, 2025); the article text itself was **not read** (LégisQuébec refuses automated fetches), so
+  whether the law also obliges the Régie to publish is unconfirmed: the duty we verified is retailers → Régie, and the
+  Régie does publish. The Régie's public map
+  (regieessencequebec.ca) reads one file, `https://regieessencequebec.ca/stations.geojson.gz`: ~2 480 stations, name,
+  brand, address, postal code, region, per-grade price string ("166.4¢") and availability, `metadata.generated_at`
+  (regenerated every few minutes), `Access-Control-Allow-Origin: *`, ETag, `Cache-Control: max-age=60`. It also offers
+  an xlsx download of the same data from the map. **No licence text is published** (site, footer, privacy page,
+  Données Québec, and the xlsx all checked; LégisQuébec refused automated fetches). We rely on a file the Régie
+  itself publishes for download and on its spokesperson's statement (Protégez-vous) that "other third-party players
+  will be able to retrieve data, since we make our data available for download"; that is permission to retrieve, not
+  an explicit reuse licence. Credit "Régie de l'énergie du Québec — Régie essence Québec" is shown on every station. **Owner to confirm**;
+  if terms appear that forbid reuse, drop `RegieFuelSource` from `core/pois.ts`.
+  Freshness: records carry **no per-station change time**, so the age shown is the feed's `generated_at` ("as of").
+  Load: chore peer only, every 10 min while someone drives or has the map open, `If-None-Match` (304 when unchanged;
+  ~130 kB gzipped otherwise); a phone that opens fuel search with prices > 30 min old fetches once itself. Cached in kv
+  (`poi.regie`), dropped after 48 h. Prices are integers in tenths of a cent.
+- **Combining sources.** Same-kind points within 60 m merge, same-brand fuel within 150 m (measured on a Montréal
+  0.5° cell: 380 OSM fuel nodes vs 374 Régie stations, 334 within 60 m, 19 at 60–200 m, 27 further; merge 9 ms for
+  ~1 400 points). Régie / MTMD rank first, then crew, OCM, OSM; per grade
+  the newest price wins (`newerPrices`), so a future crew price report (backlog #5) newer than the Régie file wins.
+- **Sharing.** New router kind `pois` (fn `chores`, durable 1 h, older builds ignore unknown kinds): compact tuples
+  (`encodePois`): priced fuel first, then cameras, unpriced fuel, chargers, nearest to the chore peer's
+  position first within each group, capped at 30 kB UTF-8 of JSON (sealed + base64 stays under the ~64 kB relay cap), on change or every 30 min. Received copies are
+  kept newest-per-id (`SharedPois`, kv `poi.shared`). Same crew-policy gate as `hazards`.
+- **Map / search.** Pins from zoom 11 (orange fuel with the chosen grade's price from zoom 12.5, blue cameras), green
+  chargers only from zoom 13.5 (one Montréal cell has ~600); prices older than 24 h are greyed. Only listed for a drive-sized area (≤ 1° × 1.5°). Searching
+  "gas / essence / station-service / diesel / заправка / АЗС…" shows a fuel block above the normal results: grade
+  chips (regular / premium / diesel, saved as `settings.fuelGrade`), Cheapest / Nearest, 15 km radius, from the local
+  cache; the Mapbox search is skipped for those generic words. A phone with no fresh (≤ 30 min) price within 15 km
+  fetches the Régie file itself once. Settings switch `mapPois` hides the layer.
+- **MTMD traffic cameras** (`ms:infos_cameras`, CC-BY 4.0): ~680 cameras (names stored in French), whole layer weekly (~450 kB) on the chore
+  peer. The sheet opens the official Québec 511 viewer page (`URL_FLUX_DONNEE`, only `quebec511.info` links kept); we
+  do not download or embed the images, which Québec 511 serves under its own terms.
+- **OSM fuel + chargers** via the D61 Overpass client, now generalised as `OverpassCells` (`sources/overpass.ts`; the
+  camera source uses it too, persisted snapshot shape unchanged): one combined `nwr[amenity~fuel|charging_station]`
+  query per 0.5° cell (Montréal cell: 546 kB, 44 s on overpass-api.de, 1 006 points, 164 kB cached), refreshed at
+  most every 30 days, `access=private/no` skipped. OSM `fuel:*` price tags are not
+  used (rare, unstandardised, undated).
+- **Open Charge Map**, optional: only with `OCM_API_KEY` in `.env` (→ `extra.ocmKey`), otherwise `disabled`. Terms
+  (openchargemap.org/site/about/terms): user data CC BY 4.0, third-party records keep their provider's copyright, apps
+  must show the data-provider attribution and licence. We ask `opendata=true`, also drop records whose
+  `DataProvider.License` is not a recognised open licence, and show "provider · licence" per record. Daily per area.
+  Not tested live (no key here).
+- **Diagnostics.** `ApiKind` gains `overpass`, `regie`, `mtmd`, `ocm` (counted, never capped), shown in Settings → Help →
+  Diagnostics; feed health (`regie`, `osm-poi`, `mtmd-cam`, `ocm`) joins the hazard health list.
+- **Rejected / not done.** `ms:stations_meteoroutieres` is a frost / thaw depth network (daily `gel`/`degel` metres,
+  used for spring load limits), not live road weather: no driver value. `ms:evenements_inondation` was already in
+  use (D44). OSM `amenity=parking`: a 0.5° Montréal cell is thousands of features, heavy on a volunteer Overpass;
+  skipped until it can be asked for a small area around a destination. Régie daily regional averages: superseded by
+  station-level data. NRCan / Statistics Canada fuel prices (city or monthly averages) for outside Québec: not
+  implemented; outside Québec there is no free official station-level feed, so stations show without prices.
+  GasBuddy / CAA: proprietary, no scraping.
+
+## D69 — Offline crew mesh: narrower scope, BLE convoy beacon, prototype first (2026-11-27)
+Study: `docs/MESH-FEASIBILITY.md`. No full mesh. Wi-Fi Direct (seconds of setup and user prompts), Wi-Fi Aware (absent
+on the OnePlus 8), Google Nearby Connections (closed SDK that needs Play services) and GATT meshes (links break while
+moving) are rejected. Candidate: an Android-only, connectionless, single-hop BLE 5 extended-advertising beacon that
+carries a compact (~140 B) sealed presence/emote. It reuses the circle epoch key (AEAD) and the member Ed25519 signature
+and adds a rotating sender tag. It runs only during drives, inside the location FGS, as a fallback `proximity` transport
+for `presence`/`emotes`. Estimated range 50–150 m (1M), 150–400 m (Coded); battery +0.3–1 %/h. iOS is out of scope
+(no ext-adv / Coded control). Gate: a two-car range test on the OnePlus 8 plus a second phone. Go at ≥90 % beacon
+delivery at 100 m on Coded, no-go under 50 m. Prototype 2–3 days, production ~1.5–2 weeks.
+Why: convoy cars that follow each other stay within ~100 m, so tunnels and short dead zones are covered cheaply. A
+separated convoy is out of range of any phone radio, and only LoRa hardware (Meshtastic) would cover that.
+
+## D70 — Road-weather route warning + free trip feeds (2026-11-27)
+- Slippery-road warning without crew sensors: ECCC weather-alert polygons (api.weather.gc.ca `weather-alerts`, ECCC
+  Data Server End-use Licence, "Data Source: Environment and Climate Change Canada") and the MTMD winter road
+  conditions already shared as `quebec:cond:*` hazards, intersected with the active route
+  (`packages/hazards/src/roadWeather`). One warning per zone (kept across reroutes), spoken in the alert voice +
+  haptic + a 10 s drive banner with the credit line; generic "Hazard ahead" is no longer spoken for condition segments.
+  ECCC is fetched by the navigating phone only (route bbox, ≤ 1 req / 15 min): polygons are too heavy for P2P.
+  Watches are ignored; statements only when their text mentions icy/slippery roads. Tunables: `ROAD_WEATHER`.
+- CBSA border waits (open.canada.ca, OGL – Canada): fetched only when the route bbox contains a QC/ON port; spoken +
+  banner once ~30 km before the port, direction-aware (`info/border.ts`, public port coordinates).
+- Wikipedia nearby on the place sheet (CC BY-SA 4.0, text only, link + licence line), cached 30 days per ~100 m cell.
+- All three have HealthTrackers (`eccc`, `cbsa`, `wiki`) and API-budget counters (Diagnostics).
+
+## D67 — Where did I park (2026-11-27)
+- When a drive ends (the existing trip detector: stop dwell or walk-away), the last trip point becomes the parked spot,
+  oriented to the last moving heading. Passenger trips never save one; marking a trip passenger forgets its spot.
+- Skipped: own saved places of type home / second home (radius + 40 m), checked first with no network call; then one
+  small Overpass `around:40` query (roads, parking areas, buildings; cached per ~11 m cell for 30 days in kv):
+  driveway or private service way nearer than any street, a house with no street within 14 m, a private lot by a
+  house. Saved as lot (inside/at `amenity=parking`), street (≤ 14 m of a street), or unknown when offline (a spot too
+  many beats a lost car). Tunables: `packages/shared/src/parking/thresholds.ts`.
+- Cleared when a new drive starts within 250 m of the car, after "Forget after" (12 / 24 / 72 h / next drive, default
+  24 h), or on Forget. Settings → Driving: toggle (default on) + Forget after.
+- Map: the user's own vehicle baked without the rider (`parkedSheet`), 44 dp, hidden while driving; tap → `/parked`
+  sheet: time, street/lot, distance + walking minutes, Walk there (Mapbox Directions `walking`, counted in
+  Diagnostics; straight line when offline/no token; ends within 20 m), note (80 chars), Forget, Share with {crew}.
+- Private by default: spot, note and settings live only in the phone's kv table; nothing writes them to a crew doc,
+  presence or the router. The only way out is the explicit per-spot "Share with {crew}" (one crew chat message with
+  street, note and an openstreetmap.org link). A global auto-share was not added (would post into chat every drive).
+  Replay test `tools/replay/test/parking.test.ts` checks every router kind a crewmate receives during a drive + park +
+  walk away carries no spot, note or street until Share is tapped.
+- Walk-away notice: silent "Parked on {street}" notification (app in background) the first time the user is 40 m from
+  the car within 30 min of parking; opens the sheet.
+
+## D66 — Ambient safety check-in after a long remote stop (2026-11-27)
+- **What.** While travelling, a stop of 5 min or more (Settings → Driving: 5 / 10 / 15 min) somewhere remote makes the
+  phone ask once: "Are you OK?" with one big "I'm OK" on an alerts-channel notification and a root-mounted in-app card.
+  If it is still unanswered after `graceS` (3 min), each opted-in crewmate gets a sealed `check-in` message with the
+  stop position and time. A late answer, or driving off, sends "all fine" to the same people. A crash-like spike (the
+  trip pipeline's `crash` event) followed by no movement asks after 45 s and alerts 2 min later, whatever the place.
+  The app never calls anyone.
+- **Pure logic.** `packages/shared/src/safety/` holds `CheckInMonitor`, `assessStop`, `looksLikeJam` and the
+  surroundings query/parser. Tunables are in `safety/thresholds.ts`. Tests are in `shared/test/checkIn.test.ts`, with
+  fixtures in `test/fixtures/check-in-stops.json` (remote roadside, rest stop, home, traffic jam; public places only),
+  and in `tools/replay/test/checkIn.test.ts`, which runs through the real trip pipeline, crash included. Times come
+  from the fixes, so replay works.
+- **Why the monitor owns its stop.** The trip detector ends a trip after 180 s stopped (walk-away after 60 s). By the
+  5 min mark the trip is over, the profile is `still` and the IMU is off. So the monitor keeps its own stop: it opens
+  when the car drops below 5.4 km/h within 10 min of doing 30 km/h or more, and closes on more than 40 m of movement,
+  any move of 150 m or more, or walking.
+- **What makes a stop ordinary.** Each of these cancels the ask:
+  - inside a saved place (mine or the crew's), its radius + 100 m
+  - within 1 km of a Home
+  - within 300 m of the navigation destination
+  - a learned D63 stop-delay cell (built on the phone from the last 20 trips)
+  - a cell where I answered OK before (250 m)
+  - a jam / closure / accident hazard within 500 m
+  - a crawl or stop-and-go in the 3 min before the stop (a jam)
+  - a cached fuel station or charger within 150 m (D64)
+  - OSM within 150 m showing buildings, residential landuse, residential streets, driveways, rest or service areas,
+    parking, fuel, food, toilets, shops, tourism, signals or stop signs
+
+  Unknown surroundings (offline, which is likely at a remote spot) still ask. Asking is harmless, and nothing is ever
+  sent without asking first.
+- **Overpass load.** We don't add buildings to the 0.5° D61/D64 cells: one cell near Montréal holds hundreds of
+  thousands of buildings. Instead, once a stop reaches 90 s, the app makes one `around:150` query with three
+  `out count` blocks, a few hundred bytes. The result is cached per 250 m cell for 90 days and counted as `overpass` in
+  Diagnostics. A crew makes a handful of these a month. The parking agent's D67 `parkingQuery` returns geometry for
+  roads, lots and buildings, which costs more than a yes/no needs, so it was not reused. The two could share one
+  lookup later.
+- **Privacy and opt-in (D56 model).** `SharingPolicy.checkIn` and `UserOverride.checkIn` are new, and absent means off,
+  so no existing crew is opted in silently. The switch is in:
+  - the crew screen ("What this crew sees")
+  - a friend's Custom sharing
+  - the onboarding crew step (one switch, preset on, for the crew created or joined there)
+  - the new-crew card on the crew screen
+  - a confirmation step on `/join` after a link, QR or code join
+
+  Opting in means consenting to send the exact stop position in an alert, even to a crew that normally sees a coarser
+  location. A friend hidden by their own override gets no alert unless that override turns check-in on
+  (`checkInAllowed`). Receiving is symmetric: alerts are shown only from crewmates I opted in to myself (crew policy, or
+  my override for them).
+- **Wire.** The new kind is `check-in` (fn `arrivals`, durable 6 h, acked), sealed per recipient through
+  `companionSend`. There is no protocol bump and no capability bit, because older builds ignore unknown kinds. Payload
+  is `{ v: 1, s: 'alert', lat, lng, acc, since, crash, t }` or `{ v: 1, s: 'ok', t }`. A crewmate's alert opens their
+  screen, which shows a danger banner with "route there".
+
+## D65 — Convoy mode (2026-11-27)
+A convoy is a group drive (D46) whose members follow one leader. Pure logic in `shared/companions/convoy.ts`
+(tunables `CONVOY` in `thresholds.ts`, Vitest `shared/test/convoy.test.ts`, 3-car replay `tools/replay/test/convoy.test.ts`).
+- **Wire**: same `drive-along` kind and `v: 1`. `session.convoy = { on, leader, rev }`, carried by the invite and by a
+  new `convoy` op. The host turns it on or off and picks any joined member as leader. The leader may only hand the lead
+  on, and an older `rev` is ignored. A leaving leader hands the lead to the host, and a leaving host-leader to
+  `successor` (no message, every peer agrees). There is no capability bit: builds without convoy ignore the op and the
+  field and see a plain group drive (no strip order, no follow prompt). This also avoids a protocol bump colliding with
+  other work.
+- **Route**: the leader always shares its route (`route-share`, thinned ≤ 300 points) while in convoy, whatever the
+  "Share my route" toggle says. A follower gets a one-tap "Follow X's route" pill (`noticePolicy('groupDrive')`,
+  deferred before a turn). It fetches the rest of the leader's line from where I join it, as a via-constrained
+  Directions query (`currentRouteQuery`). That is one call, skipped when the API budget is off, and it starts guidance on
+  that route. A later reroute after leaving it goes back to the normal fastest route.
+- **Gaps along the route, not straight line**: every phone projects all members onto the reference line, which is the
+  leader's own nav route on the leader's phone and the shared line elsewhere. Projection is windowed (60 m back,
+  ≥ 1.5 km plus speed ahead) so a route that doubles back never jumps legs. A leader reroute (new line starting
+  ≤ 500 m from the leader's place) keeps the old line up to the leader and appends the new one, so the cars behind
+  keep their place and history. Any other new line resets the tracks. Order = position along the line, and
+  arrived members are at the front. Time gap = when the car ahead passed my current point, from its position history
+  (30 min, ≤ 600 points), else distance over my speed (≥ 8 m/s). "N lights" = signals between us on my own nav route,
+  which needs both cars on it; `NavRoute.signalsAlongM` is now parsed from Mapbox intersections. It is used only for
+  1–3 signals within 2 km, else minutes (≥ 1 min), else metres.
+- **Callouts**: spoken only about my neighbours (the car ahead of me, the car behind me) when the label bucket changes
+  and holds for 10 s, at most every 90 s per car. In convoy the old straight-gap cues (D31) are off for members, and
+  "different route" stays.
+- **Regroup alert**: per member, the gap to the car ahead exceeds the distance limit (1 / 2 / 5 km, default 2) or the
+  time limit (2 / 3 / 5 / 10 min, default 3). It must hold for 20 s, re-arms only under 60 % of both limits, and repeats
+  at most every 5 min. Every phone runs the same watches, but only the leader and the car directly ahead of the gap
+  are told, never the straggler. The alert is spoken as an alert, so it is heard in "alerts only" voice mode too (gap
+  callouts are guidance). A spoken line is held while a turn is < 250 m away, then
+  dropped after 60 s. It also shows a non-interactive banner row in the companion strip for 8 s, hidden near a turn.
+- **UI**: no new screen. The companion strip (D31 safe positions) lists members in line order with an order badge
+  (leader tinted) and the signed gap. The map name chip shows "2. Sam" from a low-rate `convoyOrder` store, so the map
+  tree only re-renders on an order change (D28). The drive-together screen has a Convoy toggle (default on when sending),
+  plus a leader list with "Make leader", regroup limits, "Mute convoy alerts" and "Follow". The arrival summary adds
+  "+N min" after the first arrival.
+- **Per-crew mute**: device-local `convoyPrefs` (kv), with no change to the settings store. The crew is the session's
+  crew, else the first crew (by id) that holds every joined member. Mute silences callouts and regroup alerts, not the
+  strip.
+- **Not done**: auto-forming a convoy for crewmates who navigate to the same place outside a group drive. Destinations
+  are not on the wire, and broadcasting them would be a privacy change.
+
+## D68 — Trip memories (2026-11-27)
+- **Where**: no new tab and nothing on the map. Entry is a sparkle button in the Drives header (`/memories`), plus at
+  most one dismissible recap card at the app root after a group outing (never while driving/guiding, never over the
+  catch-up fanfare, shown once per memory, `mem-recap-card`).
+- **Grouping** (`packages/shared/src/memories`, tunables in `config.ts`): my drives chain into one outing when the stop
+  between them is ≤ 3 h. A crewmate was there when their fixes (as received on my phone, exact precision only) stay
+  within 450 m of my interpolated position for ≥ 8 min or ≥ 35 % of the outing; fix gaps > 4 min add no together-time.
+  Drive-along / group-drive membership counts too. A solo outing is kept only when notable (≥ 150 km, ≥ 3 h driving,
+  longest in 30 days, or a stop in a new city). Outing id `o-<first trip id>`.
+- **Recap**: compressed playback (moving time to ~24 s, each stop one 1.2 s beat) with every member's 3D ride on the
+  map, trails, emote bubbles as the clock passes them; highlights scored and capped at 4 (distance, time out, top speed
+  incl. a crewmate's when shared, farthest, stops, crew, hype champ, photos, night owl / early bird); who joined and
+  when; named stops (my places, else the visit city: no geocoding calls); timeline; reactions (6 emoji, toggle).
+- **Sharing** (`packages/p2p/src/memories.ts`, protocol 10, cap `memories`): kinds `memory`, `memory-photo`,
+  `memory-blob`, `memory-react`, all box-sealed to each outing member (not the whole crew) and built per recipient from
+  my effective policy (crew + override): the post needs trip history; my route only with exact location; top speed
+  only with stats and speed; photos and reactions follow the emotes switch. Receivers match a post to their own
+  memory by alias or window overlap (≥ 30 % of the shorter), else keep a remote-only memory.
+- **Photos**: gallery (system picker) or camera, re-encoded on device by a new `platform.photos` service (Kotlin
+  `PhotoTools`: ≤ 1600 px, ≤ 220 KB JPEG, EXIF rotation applied, metadata incl. GPS dropped), sent as hash-verified
+  16 KB chunks (quips' chunker), max 6 per member per memory, own LRU store (120 MB, `memories.blobs`). Each photo
+  carries an expiry: 90 days after the outing (max 365), then deleted on every phone unless that phone keeps the memory.
+  The sender can withdraw a photo. Photos never leave the crew: the share card excludes them.
+- **Share card**: 1080×1350 PNG drawn with react-native-svg (already a dependency, MIT) and its `toDataURL`, saved to
+  Pictures/CrewMap and handed to the share sheet. It carries only my route and numbers, crewmates as initials, top
+  emotes. No new libraries. A video clip was not built: it would need an encoder library.
+- **Storage / retention**: `mem_tracks` and `mem_events` are raw and follow the retention purge; `memories` rows are
+  self-contained. After retention an unkept memory loses its tracks and routes but keeps its digest, so the season /
+  year review still counts it. "Keep" (heart) exempts it from both retention stripping and photo expiry.
+- **Season review**: computed on the phone from its own memories only (outings, km, hours, photos, emotes, week streak,
+  busiest month, most rides with, top places, longest), offered for the current and last season and this / last year
+  when ≥ 2 outings.

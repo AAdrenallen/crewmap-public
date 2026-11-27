@@ -16,7 +16,7 @@ describe('locateTarget', () => {
 describe('locateActions', () => {
   it('a position offers directions first; hidden offers ask to share once', () => {
     const live = locateTarget({ paused: false, presence: { lat: 1, lng: 2, t: now } }, now);
-    expect(locateActions(live, { chat: true, driving: false })).toEqual(['directions', 'along', 'ask', 'chat', 'emote']);
+    expect(locateActions(live, { chat: true, driving: false })).toEqual(['directions', 'along', 'chat', 'emote']);
     expect(locateActions({ kind: 'hidden' }, { chat: true, driving: false })).toEqual(['askOnce', 'ask', 'chat', 'emote']);
   });
   it('driving drops chat', () => {

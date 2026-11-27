@@ -4,7 +4,7 @@
  * package stays free of crypto dependencies.
  */
 export interface HazardConfig {
-  /** Kept for signature compatibility with older builds; the Live Map is never requested (D40). */
+  /** Owner kill switch for the Waze Live Map adapter (D62). */
   wazeEnabled: boolean;
   paidEnabled: boolean;
   /** Monotonic version (owner's clock ms); higher wins. */
@@ -18,7 +18,7 @@ export interface SignedHazardConfig {
   sig: string;
 }
 
-export const DEFAULT_HAZARD_CONFIG: HazardConfig = { wazeEnabled: false, paidEnabled: false, version: 0 };
+export const DEFAULT_HAZARD_CONFIG: HazardConfig = { wazeEnabled: true, paidEnabled: false, version: 0 };
 
 export function canonicalConfig(c: HazardConfig): string {
   return JSON.stringify({ paidEnabled: c.paidEnabled, version: c.version, wazeEnabled: c.wazeEnabled });

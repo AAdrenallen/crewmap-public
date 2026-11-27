@@ -24,7 +24,7 @@ const WINDOW_MS: Record<string, number> = {
   jam: 3600_000,
 };
 
-const SOURCE_RANK: Record<HazardSourceId, number> = { quebec: 5, montreal: 5, waze: 4, 'waze-paid': 4, mapbox: 3, friends: 2, anon: 1 };
+const SOURCE_RANK: Record<HazardSourceId, number> = { quebec: 5, montreal: 5, waze: 4, osm: 3, 'waze-paid': 4, mapbox: 3, friends: 2, anon: 1 };
 
 export interface MergedHazard extends Hazard {
   /** All contributing reports (for attribution: "Waze · Friends"). */
@@ -115,6 +115,7 @@ export const SOURCE_LABEL: Record<HazardSourceId, string> = {
   'waze-paid': 'Waze',
   quebec: 'Québec 511',
   montreal: 'Ville de Montréal',
+  osm: 'OpenStreetMap',
   mapbox: 'Mapbox',
   friends: 'Friends',
   anon: 'CrewMap',
@@ -134,6 +135,7 @@ export const SOURCE_CREDIT: Record<HazardSourceId, string> = {
   'waze-paid': 'Waze',
   quebec: 'Gouvernement du Québec (MTMD), CC-BY 4.0',
   montreal: 'Ville de Montréal, CC-BY 4.0',
+  osm: '© OpenStreetMap contributors, ODbL',
   mapbox: '© Mapbox',
   friends: 'Friends',
   anon: 'CrewMap',

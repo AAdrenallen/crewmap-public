@@ -407,7 +407,7 @@ def build_avatar():
     ACCENT = mat("accent", (1.0, 0.42, 0.42), rough=0.55, sheen=0.3)
     METAL = mat("metal", (0.78, 0.78, 0.82), rough=0.25, metal=1.0)
     GOLD = mat("gold", (1.0, 0.77, 0.3), rough=0.25, metal=1.0)
-    LENS = mat("lens", (0.05, 0.06, 0.09), rough=0.08, coat=1.0)
+    LENS = mat("lens_dark", (0.05, 0.06, 0.09), rough=0.08, coat=1.0)
 
     # avatar-only tessellation (the shared helpers keep their defaults for the cars): at map size and in the editor
     # thin tubes read the same with a 4-sided section, and rings with a 4-sided one
@@ -549,13 +549,31 @@ def build_avatar():
     FRAME = mat("frame", (0.06, 0.05, 0.06), rough=0.35)
     EXTRA = mat("extra", (1.0, 0.42, 0.42), rough=0.55, sheen=0.3, double=True)
     HORN = mat("horn", (0.95, 0.9, 0.78), rough=0.5)
-    TINT = mat("tint", (0.36, 0.22, 0.08), rough=0.08, coat=1.0)
-    PINK = mat("lenspink", (0.95, 0.35, 0.58), rough=0.1, coat=1.0)
-    RED3D = mat("red3d", (0.92, 0.12, 0.12), rough=0.3)
-    BLUE3D = mat("blue3d", (0.1, 0.62, 0.95), rough=0.3)
-    NEON = mat("neon", (0.2, 0.95, 1.0), rough=0.2, emit=1.5)
-    AMBER = mat("amber", (0.98, 0.62, 0.12), rough=0.1, emit=0.3)
-    MIRROR = mat("mirror", (0.98, 0.5, 0.16), rough=0.1, metal=0.6)
+    TINT = mat("lens_tint", (0.36, 0.22, 0.08), rough=0.08, coat=1.0)
+    PINK = mat("lens_pink", (0.95, 0.35, 0.58), rough=0.1, coat=1.0)
+    RED3D = mat("lens_red3d", (0.92, 0.12, 0.12), rough=0.3)
+    BLUE3D = mat("lens_blue3d", (0.1, 0.62, 0.95), rough=0.3)
+    NEON = mat("lens_neon", (0.2, 0.95, 1.0), rough=0.2, emit=1.5)
+    AMBER = mat("lens_amber", (0.98, 0.62, 0.12), rough=0.1, emit=0.3)
+    MIRROR = mat("lens_mirror", (0.98, 0.5, 0.16), rough=0.1, metal=0.6)
+    # clear lenses for open frames (rendered see-through; the lens colour tints them softly)
+    CLEAR = mat("lens_clear", (0.86, 0.93, 1.0), rough=0.05, coat=1.0)
+
+    def sub(slot, m):
+        """Copy of a fixed trim material owned by one slot (`<slot>2_<name>`): the slot's optional trim colour
+        repaints it; unset, it keeps the built-in colour."""
+        name = f"{slot}_{m.name}"
+        if name not in MATS:
+            c = m.copy()
+            c.name = name
+            MATS[name] = c
+        return MATS[name]
+
+    HAIR2A = sub("hair2", ACCENT)
+    TOP2W, TOP2I = sub("top2", WHITE), sub("top2", INK)
+    BOT2W, BOT2I = sub("bottom2", WHITE), sub("bottom2", INK)
+    HAT2W, HAT2I, HAT2A, HAT2H = sub("hat2", WHITE), sub("hat2", INK), sub("hat2", ACCENT), sub("hat2", HORN)
+    EXT2I, EXT2G = sub("extra2", INK), sub("extra2", GOLD)
 
     def align(d):
         """Rotation taking local +Z onto direction d."""
@@ -626,7 +644,7 @@ def build_avatar():
         tube(name, [on(az, math.radians(e), s)[0] for e in els], r, HAIR, grp, res=3, bev=1)
 
     def tie(name, grp, at, axis, r=0.032):
-        ring(name, r, 0.011, (0, 0, 0), ACCENT, grp, n=12, minor=5)
+        ring(name, r, 0.011, (0, 0, 0), HAIR2A, grp, n=12, minor=5)
         o = bpy.data.objects[name]
         o.data.transform(T(at) @ align(axis))
 
@@ -670,7 +688,7 @@ def build_avatar():
         elif name == "bun":
             shell(f"{pre}_shell", grp, scale=1.04, front=0.5, puff=0.03)
             ellip(f"{pre}_knot", (0.075, 0.075, 0.068), HC + Vector((0, 0.07, 0.205)), HAIR, grp, seg=16, rings=10, deform=lambda c: c * (1 + 0.06 * math.sin(6 * math.atan2(c.y, c.x) + 4 * c.z)))
-            ring(f"{pre}_tie", 0.05, 0.011, HC + Vector((0, 0.06, 0.15)), ACCENT, grp, rot=(math.radians(-25), 0, 0))
+            ring(f"{pre}_tie", 0.05, 0.011, HC + Vector((0, 0.06, 0.15)), HAIR2A, grp, rot=(math.radians(-25), 0, 0))
         elif name == "mohawk":
             shell(f"{pre}_shell", grp, scale=1.02, front=0.55, puff=0.0)
             for j in range(7):
@@ -684,7 +702,7 @@ def build_avatar():
             shell(f"{pre}_cloud", grp, scale=1.05, front=0.36, side=-0.3, back=-0.62, puff=0.05, lump=0.04, vol=0.45, seg=32, rings=20)
         elif name == "ponytail":
             shell(f"{pre}_shell", grp, scale=1.04, front=0.48, puff=0.03, part=0.04)
-            ring(f"{pre}_tie", 0.038, 0.012, HC + Vector((0, 0.205, 0.07)), ACCENT, grp, rot=(math.radians(70), 0, 0))
+            ring(f"{pre}_tie", 0.038, 0.012, HC + Vector((0, 0.205, 0.07)), HAIR2A, grp, rot=(math.radians(70), 0, 0))
             lock(f"{pre}_tail", grp, [(0, 0.2, 0.08), (0, 0.27, 0.04), (0, 0.29, -0.1), (0, 0.25, -0.24)], r=0.05, radii=(0.8, 1.0, 0.8, 0.2))
         elif name == "fade":
             shell(f"{pre}_shell", grp, scale=1.018, front=0.5, puff=0.0)
@@ -757,7 +775,7 @@ def build_avatar():
         elif name == "topKnot":
             shell(f"{pre}_shell", grp, scale=1.035, front=0.5, puff=0.02)
             ellip(f"{pre}_knot", (0.045, 0.045, 0.06), HC + Vector((0, 0.03, 0.25)), HAIR, grp, seg=12, rings=8)
-            ring(f"{pre}_tie", 0.035, 0.01, HC + Vector((0, 0.03, 0.205)), ACCENT, grp, n=12, minor=5)
+            ring(f"{pre}_tie", 0.035, 0.01, HC + Vector((0, 0.03, 0.205)), HAIR2A, grp, n=12, minor=5)
         elif name == "cornrows":
             shell(f"{pre}_shell", grp, scale=1.02, front=0.5, puff=0.0)
             for k in range(-3, 4):
@@ -830,7 +848,7 @@ def build_avatar():
             ring(f"{tg}_hem", 1.0, 0.009 if name != "sweater" else 0.014, (0, 0, hem[0] + 0.006), TOP, grp, n=24, scale=(hem[1] + 0.002, hem[2] + 0.002))
             neck = prof[-1]
             if name != "tank":
-                ring(f"{tg}_collar", 1.0, 0.012 if name != "sweater" else 0.02, (0, 0, neck[0]), WHITE if name == "jersey" else TOP, grp, n=20, scale=(neck[1], neck[2]))
+                ring(f"{tg}_collar", 1.0, 0.012 if name != "sweater" else 0.02, (0, 0, neck[0]), TOP2W if name == "jersey" else TOP, grp, n=20, scale=(neck[1], neck[2]))
             if sleeve > 0:
                 for side, piv in ((-1, shL), (1, shR)):
                     s = "L" if side < 0 else "R"
@@ -838,30 +856,30 @@ def build_avatar():
                     r0 = 0.033 + 0.014
                     sp = [(-sleeve, 0.028 + 0.012 + (0.006 if sleeve < 0.1 else 0)), (-sleeve * 0.5, r0 - 0.002), (0.0, r0 + 0.004), (0.025, r0 * 0.85), (0.045, 0.0)]
                     lathe(f"{tg}_sleeve{s}", sp, TOP, piv, seg=14, M=M, wave=lambda a, z: 1 + 0.03 * math.sin(5 * a + 30 * z), caps=(False, False))
-                    ring(f"{tg}_cuff{s}", sp[0][1] + 0.002, 0.008, M @ Vector((0, 0, -sleeve + 0.006)), WHITE if name == "jersey" else TOP, piv, rot=(0, -side * ARM_TILT, 0), n=14)
+                    ring(f"{tg}_cuff{s}", sp[0][1] + 0.002, 0.008, M @ Vector((0, 0, -sleeve + 0.006)), TOP2W if name == "jersey" else TOP, piv, rot=(0, -side * ARM_TILT, 0), n=14)
             fz = lambda z: prof_at(prof, z)[2]  # front depth of the shell at height z
             if name == "hoodie":
                 ellip(f"{tg}_hood", (sw * 0.95, 0.08, 0.07), (0, d * 0.8, 0.6), TOP, grp, seg=16, rings=10, deform=lambda c: Vector((c.x, c.y, c.z * (1.2 if c.y > 0 else 0.7))))
                 for side in (-1, 1):
-                    tube(f"{tg}_string{side}", [(side * 0.028, -fz(0.56) - 0.006, 0.56), (side * 0.03, -fz(0.52) - 0.008, 0.52), (side * 0.026, -fz(0.47) - 0.008, 0.47)], 0.005, WHITE, grp)
+                    tube(f"{tg}_string{side}", [(side * 0.028, -fz(0.56) - 0.006, 0.56), (side * 0.03, -fz(0.52) - 0.008, 0.52), (side * 0.026, -fz(0.47) - 0.008, 0.47)], 0.005, TOP2W, grp)
                 rbox(f"{tg}_pocket", (0.15, 0.03, 0.075), (0, -fz(0.36) - 0.008, 0.36), TOP, grp, b=0.3, taper=(0.82, 1.0))
             elif name == "jacket":
                 tube(f"{tg}_zip", [(0, -fz(0.29) - 0.004, 0.29), (0, -fz(0.43) - 0.004, 0.43), (0, -fz(0.55) - 0.003, 0.55)], 0.0055, METAL, grp)
                 for side in (-1, 1):
                     rbox(f"{tg}_lapel{side}", (0.05, 0.016, 0.07), (side * 0.045, -fz(0.56) + 0.004, 0.585), TOP, grp, b=0.35, rot=(0.35, 0, side * 0.5))
-                    rbox(f"{tg}_pocket{side}", (0.05, 0.008, 0.006), (side * 0.075, -fz(0.37) * 0.96 - 0.002, 0.37), INK, grp, b=0.4, rot=(0, 0, -side * 0.3))
+                    rbox(f"{tg}_pocket{side}", (0.05, 0.008, 0.006), (side * 0.075, -fz(0.37) * 0.96 - 0.002, 0.37), TOP2I, grp, b=0.4, rot=(0, 0, -side * 0.3))
             elif name == "sweater":
                 for z in (0.29, 0.305):
                     ring(f"{tg}_rib{int(z * 1000)}", 1.0, 0.006, (0, 0, z), TOP, grp, n=24, scale=(hem[1] + 0.006, hem[2] + 0.006))
             elif name == "jersey":
                 for side in (-1, 1):
-                    tube(f"{tg}_stripe{side}", [(side * (prof_at(prof, z)[1] + 0.003), 0, z) for z in (0.3, 0.37, 0.44, 0.5)], 0.008, WHITE, grp)
-                rbox(f"{tg}_number", (0.05, 0.01, 0.07), (0, -fz(0.43) - 0.003, 0.43), WHITE, grp, b=0.3)
+                    tube(f"{tg}_stripe{side}", [(side * (prof_at(prof, z)[1] + 0.003), 0, z) for z in (0.3, 0.37, 0.44, 0.5)], 0.008, TOP2W, grp)
+                rbox(f"{tg}_number", (0.05, 0.01, 0.07), (0, -fz(0.43) - 0.003, 0.43), TOP2W, grp, b=0.3)
             elif name == "tank":
                 tube(f"{tg}_trim", [tank_pt(prof, 2 * math.pi * k / 28, 1.0, 0.003) for k in range(28)], 0.0055, TOP, grp, cyclic=True, res=1, bev=1)
 
     # --- bottoms: per-body hip piece + legs (on pivots, shared by every body) with distinct silhouettes
-    stitch = mat("stitch", (0.85, 0.6, 0.25), rough=0.7)
+    stitch = sub("bottom2", mat("stitch", (0.85, 0.6, 0.25), rough=0.7))
     LEGS = {
         "jeans": [(0.045, 0.053), (0.12, 0.052), (0.2, 0.055), (0.31, 0.064)],
         "shorts": [(0.19, 0.061), (0.25, 0.061), (0.31, 0.066)],
@@ -874,6 +892,15 @@ def build_avatar():
         "leggings": [(0.045, 0.041), (0.1, 0.044), (0.2, 0.049), (0.31, 0.058)],
         "overalls": [(0.05, 0.058), (0.15, 0.059), (0.31, 0.067)],
         "pleated": None,
+        "kilt": None,
+        "capri": [(0.14, 0.049), (0.2, 0.053), (0.31, 0.062)],
+        "flares": [(0.015, 0.088), (0.07, 0.064), (0.16, 0.05), (0.31, 0.062)],
+        "harem": [(0.04, 0.043), (0.075, 0.052), (0.15, 0.081), (0.25, 0.084), (0.31, 0.07)],
+        "chinos": [(0.04, 0.05), (0.15, 0.054), (0.31, 0.064)],
+        "bikeshorts": [(0.2, 0.053), (0.25, 0.056), (0.31, 0.06)],
+        "boardshorts": [(0.1, 0.076), (0.2, 0.078), (0.31, 0.079)],
+        "cutoffs": [(0.2, 0.06), (0.25, 0.061), (0.31, 0.066)],
+        "palazzo": [(0.015, 0.098), (0.1, 0.09), (0.2, 0.077), (0.31, 0.069)],
     }
     for name, legs in LEGS.items():
         manifest["bottom"].append(name)
@@ -884,12 +911,19 @@ def build_avatar():
             body = torso_prof(sw, d, ww, hw, t=0.008)
             hip = [(0.235, hw * 0.55, d * 0.55)] + [p for p in body if p[0] <= 0.3] + [prof_at(body, 0.325)]
             lathe(f"{tg}_hip", hip, BOTTOM, grp, seg=24, caps=(True, False))
-            if name in ("skirt", "pleated"):
+            if name in ("skirt", "pleated", "kilt"):
                 bot = 0.17 if name == "skirt" else 0.2
                 sk = [(bot, hw + 0.085, d + 0.075), ((bot + 0.3) / 2, hw + 0.045, d * 0.92 + 0.045), (0.3, hw + 0.014, d * 0.92 + 0.014), prof_at(torso_prof(sw, d, ww, hw, t=0.01), 0.325)]
                 wave = (lambda a, z: 1 + 0.06 * abs(math.sin(8 * a)) * (0.33 - z) / 0.16) if name == "skirt" else (lambda a, z: 1 + 0.05 * (abs(((12 * a / math.pi) % 2) - 1) - 0.5) * (0.33 - z) / 0.13)
                 lathe(f"{tg}_skirt", sk, BOTTOM, grp, seg=32 if name == "skirt" else 48, wave=wave, caps=(False, False))
-                if name == "pleated":
+                if name == "kilt":
+                    for kz, kr in ((0.235, 0.0045), (0.27, 0.0045)):
+                        kw, kd = prof_at(sk, kz)[1:3]
+                        ring(f"{tg}_plaid{int(kz * 1000)}", 1.0, kr, (0, 0, kz), BOT2I, grp, n=32, scale=(kw + 0.004, kd + 0.004))
+                    kw, kd = prof_at(sk, 0.19)[1:3]
+                    ring(f"{tg}_hemstripe", 1.0, 0.005, (0, 0, 0.19), BOT2W, grp, n=32, scale=(kw + 0.004, kd + 0.004))
+                    ellip(f"{tg}_pin", (0.012, 0.006, 0.02), (hw * 0.8, -(d * 0.92 + 0.045), 0.2), METAL, grp, seg=8, rings=6)
+                if name in ("pleated", "kilt"):
                     ring(f"{tg}_band", 1.0, 0.009, (0, 0, 0.31), BOTTOM, grp, n=24, scale=(hw + 0.016, d * 0.92 + 0.016))
             if name == "overalls":
                 bib = torso_prof(sw, d, ww, hw, t=0.028, z0=0.28, z1=0.5)
@@ -899,13 +933,30 @@ def build_avatar():
                     tube(f"{tg}_strap{side}", [(side * sw * 0.42, -fy, 0.49), (side * sw * 0.55, -d * 0.6, 0.575), (side * sw * 0.55, d * 0.6, 0.575), (side * sw * 0.45, d + 0.03, 0.43), (side * sw * 0.3, d + 0.02, 0.34)], 0.011, BOTTOM, grp)
                     ellip(f"{tg}_button{side}", (0.011, 0.006, 0.011), (side * sw * 0.42, -fy - 0.006, 0.475), GOLD, grp, seg=10, rings=6)
                 rbox(f"{tg}_pocket", (0.07, 0.01, 0.05), (0, -prof_at(bib, 0.42)[2] - 0.003, 0.42), BOTTOM, grp, b=0.3)
+            if name in ("jeans", "chinos", "cutoffs", "bikeshorts"):
+                bw, bd = prof_at(body, 0.322)[1:3]
+                ring(f"{tg}_waistband", 1.0, 0.008, (0, 0, 0.318), BOTTOM, grp, n=24, scale=(bw + 0.008, bd + 0.008))
+            if name in ("jeans", "chinos", "cutoffs"):
+                yf = prof_at(body, 0.3)[2]
+                tube(f"{tg}_fly", [(0, -yf - 0.003, 0.318), (0.014, -yf - 0.003, 0.296), (0.014, -yf - 0.003, 0.262)], 0.0028, stitch, grp)
+                ellip(f"{tg}_waistbutton", (0.007, 0.004, 0.007), (0, -prof_at(body, 0.318)[2] - 0.011, 0.318), GOLD if name == "jeans" else METAL, grp, seg=8, rings=4)
+                for ang in (0.45, 1.05, 2.09, 2.69):
+                    rbox(f"{tg}_loop{int(ang * 100)}", (0.009, 0.006, 0.034), ((bw + 0.012) * math.cos(ang), -(bd + 0.012) * math.sin(ang), 0.31), BOTTOM, grp, b=0.3, seg=1)
+                for side in (-1, 1):
+                    py = prof_at(body, 0.285)[2]
+                    tube(f"{tg}_pk{side}", [(side * 0.03, -py - 0.002, 0.318), (side * 0.07, -py - 0.002, 0.292), (side * 0.072, -py - 0.002, 0.25)], 0.0028, stitch, grp)
+                    if name == "jeans":
+                        ellip(f"{tg}_rivet{side}", (0.004, 0.003, 0.004), (side * 0.03, -py - 0.004, 0.317), GOLD, grp, seg=5, rings=3)
+                        ellip(f"{tg}_rivetb{side}", (0.004, 0.003, 0.004), (side * 0.072, -py - 0.004, 0.25), GOLD, grp, seg=5, rings=3)
+                    if name == "chinos":
+                        rbox(f"{tg}_welt{side}", (0.05, 0.005, 0.006), (side * 0.06, -prof_at(body, 0.285)[2] - 0.003, 0.29), BOTTOM, grp, b=0.4, rot=(0, 0, -side * 0.5))
         if legs is None:
             continue
         for side, piv in ((-1, hipL), (1, hipR)):
             s = "L" if side < 0 else "R"
             x = side * LEG_X
             fold = None
-            if name in ("jeans", "overalls"):
+            if name in ("jeans", "overalls", "cutoffs"):
                 fold = lambda a, z: 1 + 0.04 * math.sin(4 * a + 60 * z) * math.exp(-((z - 0.13) ** 2) / 0.001)
             elif name == "baggy":
                 fold = lambda a, z: 1 + 0.06 * math.sin(5 * a + 90 * z) * max(0.0, (0.14 - z) / 0.11)
@@ -918,7 +969,7 @@ def build_avatar():
                 tube(f"{pre}_seam{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs)], 0.003, stitch, piv)
             elif name == "joggers":  # elastic ankle cuff, side stripe
                 ring(f"{pre}_cuff{s}", r0 + 0.001, 0.013, (x, 0, end + 0.006), BOTTOM, piv, n=14)
-                tube(f"{pre}_stripe{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs[1:])], 0.005, WHITE, piv)
+                tube(f"{pre}_stripe{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs[1:])], 0.005, BOT2W, piv)
             elif name == "cargo":
                 ring(f"{pre}_cuff{s}", r0 + 0.002, 0.009, (x, 0, end + 0.005), BOTTOM, piv, n=14)
                 rbox(f"{pre}_pocket{s}", (0.02, 0.066, 0.072), (x + side * 0.062, 0, 0.19), BOTTOM, piv, b=0.3)
@@ -931,6 +982,33 @@ def build_avatar():
                 tube(f"{pre}_seam{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs)], 0.003, stitch, piv)
             elif name == "baggy":
                 ring(f"{pre}_cuff{s}", r0 + 0.002, 0.008, (x, 0, end + 0.004), BOTTOM, piv, n=16)
+            elif name == "capri":
+                ring(f"{pre}_cuff{s}", r0 + 0.003, 0.012, (x, 0, end + 0.01), BOTTOM, piv, n=14)
+                ring(f"{pre}_cuff2{s}", r0 + 0.004, 0.004, (x, 0, end + 0.026), stitch, piv, n=14)
+            elif name == "flares":
+                ring(f"{pre}_cuff{s}", r0 + 0.001, 0.007, (x, 0, end + 0.004), BOTTOM, piv, n=18)
+                tube(f"{pre}_seam{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs)], 0.003, stitch, piv)
+            elif name == "harem":
+                ring(f"{pre}_cuff{s}", r0 + 0.002, 0.014, (x, 0, end + 0.008), BOTTOM, piv, n=14)
+                ring(f"{pre}_band{s}", legs[1][1] + 0.002, 0.005, (x, 0, 0.19), stitch, piv, n=16)
+            elif name == "chinos":
+                ring(f"{pre}_cuff{s}", r0 + 0.003, 0.009, (x, 0, end + 0.008), BOTTOM, piv, n=14)
+                tube(f"{pre}_crease{s}", [(x, -(r + 0.001), z) for z, r in reversed(legs)], 0.0028, stitch, piv)
+            elif name == "bikeshorts":
+                tube(f"{pre}_stripe{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs)], 0.006, BOT2W, piv)
+                ring(f"{pre}_cuff{s}", r0 + 0.001, 0.006, (x, 0, end + 0.004), BOT2W, piv, n=14)
+            elif name == "boardshorts":
+                ring(f"{pre}_cuff{s}", r0 + 0.002, 0.009, (x, 0, end + 0.005), BOTTOM, piv, n=16)
+                tube(f"{pre}_stripe{s}", [(x + side * (r + 0.002), 0, z) for z, r in reversed(legs)], 0.009, BOT2W, piv)
+                rbox(f"{pre}_pocket{s}", (0.016, 0.05, 0.05), (x + side * 0.08, 0, 0.2), BOTTOM, piv, b=0.3)
+            elif name == "cutoffs":
+                for k in range(8):
+                    a = 2 * math.pi * k / 8
+                    rbox(f"{pre}_fray{s}{k}", (0.005, 0.005, 0.016), (x + (r0 + 0.003) * math.cos(a), (r0 + 0.003) * math.sin(a), end - 0.004), BOTTOM, piv, b=0.4, seg=1, rot=(0.15 * math.sin(a), -0.15 * math.cos(a), 0))
+                tube(f"{pre}_seam{s}", [(x + side * (r + 0.001), 0, z) for z, r in reversed(legs)], 0.003, stitch, piv)
+            elif name == "palazzo":
+                ring(f"{pre}_cuff{s}", r0 + 0.001, 0.006, (x, 0, end + 0.004), BOTTOM, piv, n=20)
+                tube(f"{pre}_pleat{s}", [(x, -(r + 0.001), z) for z, r in reversed(legs)], 0.003, stitch, piv)
 
     # --- shoes (on leg pivots): rounded lofted soles and uppers; `shoe` main colour, `shoe2` sole/laces/accent
     def foot(W, L, n=20):
@@ -948,6 +1026,10 @@ def build_avatar():
 
     def upper(name, x, W, L, z0, hgt, material, piv, back=0.028, puff=1.0):
         loft(name, foot(W, L), [(z0, 1.0), (z0 + hgt * 0.4, 0.98 * puff), (z0 + hgt * 0.75, 0.84 * puff, 0, 0.012), (z0 + hgt, 0.5, 0, back)], material, piv, M=T((x, FY, 0)), caps=(False, True))
+
+    def heel(name, x, W, L, z0, hgt, material, piv):
+        """Heel counter: closes the back of the upper so no foot or ankle shows through behind the heel."""
+        ellip(name, (W * 0.4, 0.034, hgt * 0.8), (x, FY + L * 0.34, z0 + hgt * 0.62), material, piv, seg=12, rings=8)
 
     def laces(name, x, z0, hgt, n, material, piv):
         for k in range(n):
@@ -972,7 +1054,8 @@ def build_avatar():
             if name == "sneakers":
                 sole(f"{pre}_sole{s}", x, 0.08, 0.155, 0.022, SHOE2, piv)
                 upper(f"{pre}_upper{s}", x, 0.072, 0.145, 0.02, 0.052, SHOE, piv)
-                laces(f"{pre}_lace{s}", x, 0.02, 0.052, 3, WHITE, piv)
+                laces(f"{pre}_lace{s}", x, 0.02, 0.052, 3, SHOE2, piv)
+                heel(f"{pre}_heel{s}", x, 0.072, 0.145, 0.02, 0.052, SHOE, piv)
                 tube(f"{pre}_stripe{s}", [(x + side * 0.037, 0.03, 0.034), (x + side * 0.039, -0.02, 0.03), (x + side * 0.035, -0.055, 0.044)], 0.0045, SHOE2, piv, radii=[0.4, 1, 0.5])
                 ring(f"{pre}_collar{s}", 0.038, 0.007, (x, 0.006, 0.07), SHOE, piv, n=12, minor=5)
             elif name == "hightops":
@@ -981,21 +1064,25 @@ def build_avatar():
                 lathe(f"{pre}_shaft{s}", [(0.05, 0.039), (0.085, 0.039), (0.112, 0.039)], SHOE, piv, seg=14, M=T((x, 0.002, 0)), caps=(False, False))
                 ring(f"{pre}_collar{s}", 0.039, 0.0035, (x, 0.002, 0.112), SHOE2, piv, n=14)
                 ellip(f"{pre}_cap{s}", (0.033, 0.03, 0.02), (x, -0.08, 0.03), SHOE2, piv, seg=12, rings=8, keep=lambda c: c.z > -0.3)
-                laces(f"{pre}_lace{s}", x, 0.022, 0.05, 3, WHITE, piv)
+                laces(f"{pre}_lace{s}", x, 0.022, 0.05, 3, SHOE2, piv)
+                heel(f"{pre}_heel{s}", x, 0.072, 0.145, 0.022, 0.05, SHOE, piv)
             elif name == "boots":
                 sole(f"{pre}_sole{s}", x, 0.084, 0.16, 0.032, SHOE2, piv)
                 upper(f"{pre}_upper{s}", x, 0.076, 0.15, 0.03, 0.05, SHOE, piv)
                 lathe(f"{pre}_shaft{s}", [(0.055, 0.039), (0.08, 0.039), (0.105, 0.039)], SHOE, piv, seg=14, M=T((x, 0.002, 0)), caps=(False, False))
                 ring(f"{pre}_fold{s}", 0.039, 0.0035, (x, 0.002, 0.105), SHOE2, piv, n=14)
                 laces(f"{pre}_lace{s}", x, 0.03, 0.05, 3, SHOE2, piv)
+                heel(f"{pre}_heel{s}", x, 0.076, 0.15, 0.03, 0.05, SHOE, piv)
             elif name == "loafers":
                 sole(f"{pre}_sole{s}", x, 0.076, 0.152, 0.014, SHOE2, piv)
                 upper(f"{pre}_upper{s}", x, 0.07, 0.144, 0.012, 0.038, SHOE, piv, back=0.022)
                 tube(f"{pre}_strap{s}", [(x - 0.03, -0.045, 0.034), (x, -0.052, 0.046), (x + 0.03, -0.045, 0.034)], 0.005, SHOE2, piv)
                 ring(f"{pre}_collar{s}", 0.037, 0.006, (x, 0.008, 0.048), SHOE, piv, n=12, minor=5)
+                heel(f"{pre}_heel{s}", x, 0.07, 0.144, 0.012, 0.038, SHOE, piv)
             elif name == "clogs":
                 sole(f"{pre}_sole{s}", x, 0.088, 0.16, 0.03, SHOE2, piv)
                 upper(f"{pre}_upper{s}", x, 0.084, 0.152, 0.028, 0.058, SHOE, piv, puff=1.03)
+                heel(f"{pre}_heel{s}", x, 0.084, 0.152, 0.028, 0.058, SHOE, piv)
                 for k, (dx, dy) in enumerate(((-0.018, -0.06), (0.0, -0.066), (0.018, -0.06), (-0.01, -0.045), (0.01, -0.045))):
                     ellip(f"{pre}_hole{s}{k}", (0.006, 0.006, 0.003), (x + dx, dy, 0.069 + 0.06 * (dy + 0.06)), INK, piv, seg=8, rings=4, rot=(-0.4, 0, 0))
                 tube(f"{pre}_strap{s}", [(x - 0.042, 0.0, 0.05), (x - 0.03, 0.05, 0.04), (x + 0.03, 0.05, 0.04), (x + 0.042, 0.0, 0.05)], 0.006, SHOE2, piv)
@@ -1062,18 +1149,18 @@ def build_avatar():
         elif name == "beanie":
             ellip(f"{pre}_dome", (0.245, 0.235, 0.22), (0, 0.01, hz + 0.045), HAT, grp, seg=28, rings=16, keep=lambda c: c.z > -0.15, deform=lambda c: c * (1 + 0.012 * math.cos(24 * math.atan2(c.y, c.x))))
             lathe(f"{pre}_fold", [(hz - 0.0, 0.25, 0.24), (hz + 0.06, 0.252, 0.242)], HAT, grp, seg=24, M=T((0, 0.01, 0)), wave=lambda a, z: 1 + 0.02 * math.cos(24 * a), caps=(False, False))
-            ellip(f"{pre}_pompom", (0.05, 0.05, 0.045), (0, 0.01, hz + 0.27), WHITE, grp, seg=14, rings=10, deform=lambda c: c * (1 + 0.1 * math.sin(7 * math.atan2(c.y, c.x)) * math.sin(6 * c.z)))
+            ellip(f"{pre}_pompom", (0.05, 0.05, 0.045), (0, 0.01, hz + 0.27), HAT2W, grp, seg=14, rings=10, deform=lambda c: c * (1 + 0.1 * math.sin(7 * math.atan2(c.y, c.x)) * math.sin(6 * c.z)))
         elif name == "bucket":
             lathe(f"{pre}_crown", [(hz + 0.04, 0.222), (hz + 0.15, 0.21), (hz + 0.215, 0.19), (hz + 0.24, 0.15), (hz + 0.248, 0.0)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
             lathe(f"{pre}_brim", [(hz - 0.02, 0.32), (hz + 0.02, 0.27), (hz + 0.045, 0.215)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
-            ring(f"{pre}_band", 0.214, 0.012, (0, 0.01, hz + 0.065), INK, grp, n=24)
+            ring(f"{pre}_band", 0.214, 0.012, (0, 0.01, hz + 0.065), HAT2I, grp, n=24)
         elif name == "tuque":
             pts = [(-0.02, 0.232), (0.07, 0.215), (0.16, 0.16), (0.25, 0.085), (0.31, 0.0)]
             tilt = T((0, 0.015, hz + 0.07)) @ R((-0.3, 0, 0))
             lathe(f"{pre}_cone", pts, HAT, grp, seg=28, M=tilt, wave=lambda a, z: 1 + 0.015 * math.cos(20 * a), caps=(False, False))
-            lathe(f"{pre}_rim", [(hz + 0.03, 0.238), (hz + 0.05, 0.25), (hz + 0.09, 0.246), (hz + 0.11, 0.232)], WHITE, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
+            lathe(f"{pre}_rim", [(hz + 0.03, 0.238), (hz + 0.05, 0.25), (hz + 0.09, 0.246), (hz + 0.11, 0.232)], HAT2W, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
             tip = tilt @ Vector((0, 0, 0.32))
-            ellip(f"{pre}_pompom", (0.055, 0.055, 0.05), tip, WHITE, grp, seg=14, rings=10, deform=lambda c: c * (1 + 0.1 * math.sin(7 * math.atan2(c.y, c.x)) * math.sin(6 * c.z)))
+            ellip(f"{pre}_pompom", (0.055, 0.055, 0.05), tip, HAT2W, grp, seg=14, rings=10, deform=lambda c: c * (1 + 0.1 * math.sin(7 * math.atan2(c.y, c.x)) * math.sin(6 * c.z)))
         elif name == "crown":
             lathe(f"{pre}_band", [(hz + 0.15, 0.15), (hz + 0.2, 0.155)], GOLD, grp, seg=28, caps=(False, False))
             for j in range(5):
@@ -1086,11 +1173,11 @@ def build_avatar():
             lathe(f"{pre}_crown", [(hz + 0.04, 0.222, 0.212), (hz + 0.15, 0.205, 0.195), (hz + 0.22, 0.19, 0.18), (hz + 0.245, 0.15, 0.14), (hz + 0.25, 0.0)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False),
                   wave=lambda a, z: 1 - 0.12 * max(0.0, math.cos(a - math.pi / 2)) ** 6 * max(0.0, (z - hz - 0.15) / 0.1))
             disc(f"{pre}_brim", 0.215, 0.38, hz + 0.05, HAT, grp, lift=lambda a, r: 0.6 * (r - 0.215) ** 2 * (1 + 5 * math.cos(a) ** 2) - 0.02 * max(0.0, -math.sin(a)) * (r - 0.215) / 0.16, seg=28, rings=3)
-            ring(f"{pre}_band", 1.0, 0.012, (0, 0.01, hz + 0.065), INK, grp, n=24, scale=(0.222, 0.212))
+            ring(f"{pre}_band", 1.0, 0.012, (0, 0.01, hz + 0.065), HAT2I, grp, n=24, scale=(0.222, 0.212))
         elif name == "topHat":
             disc(f"{pre}_brim", 0.205, 0.3, hz + 0.08, HAT, grp, lift=lambda a, r: 0.5 * (r - 0.205) ** 2 * (1 + 3 * math.cos(a) ** 2), seg=24, rings=2)
             lathe(f"{pre}_tube", [(hz + 0.05, 0.2), (hz + 0.2, 0.185), (hz + 0.36, 0.2), (hz + 0.37, 0.0)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
-            lathe(f"{pre}_band", [(hz + 0.09, 0.2), (hz + 0.14, 0.192)], ACCENT, grp, seg=24, M=T((0, 0.01, 0)), wave=lambda a, z: 1.03, caps=(False, False))
+            lathe(f"{pre}_band", [(hz + 0.09, 0.2), (hz + 0.14, 0.192)], HAT2A, grp, seg=24, M=T((0, 0.01, 0)), wave=lambda a, z: 1.03, caps=(False, False))
         elif name == "party":
             tilt = T((0.03, 0.0, hz + 0.16)) @ R((0, 0.2, 0))
             lathe(f"{pre}_cone", [(0, 0.11), (0.24, 0.0)], HAT, grp, seg=24, M=tilt, caps=(True, False))
@@ -1098,9 +1185,9 @@ def build_avatar():
                 h = 0.04 + 0.025 * (k % 3) + 0.03 * (k // 3)
                 a = k * 2.3
                 rr = 0.11 * (1 - h / 0.24) + 0.002
-                ellip(f"{pre}_dot{k}", (0.012, 0.012, 0.012), tilt @ Vector((rr * math.cos(a), rr * math.sin(a), h)), WHITE, grp, seg=8, rings=4)
-            ellip(f"{pre}_pompom", (0.032,) * 3, tilt @ Vector((0, 0, 0.245)), ACCENT, grp, seg=12, rings=8, deform=lambda c: c * (1 + 0.12 * math.sin(7 * math.atan2(c.y, c.x)) * math.sin(6 * c.z)))
-            tube(f"{pre}_elastic", [(-0.08, 0.0, hz + 0.16), (-0.2, -0.04, hz - 0.03), (-0.1, -0.13, hz - 0.18), (0.0, -0.15, hz - 0.2), (0.1, -0.13, hz - 0.18), (0.2, -0.04, hz - 0.03), (0.13, 0.0, hz + 0.15)], 0.0025, INK, grp, res=2)
+                ellip(f"{pre}_dot{k}", (0.012, 0.012, 0.012), tilt @ Vector((rr * math.cos(a), rr * math.sin(a), h)), HAT2W, grp, seg=8, rings=4)
+            ellip(f"{pre}_pompom", (0.032,) * 3, tilt @ Vector((0, 0, 0.245)), HAT2A, grp, seg=12, rings=8, deform=lambda c: c * (1 + 0.12 * math.sin(7 * math.atan2(c.y, c.x)) * math.sin(6 * c.z)))
+            tube(f"{pre}_elastic", [(-0.08, 0.0, hz + 0.16), (-0.2, -0.04, hz - 0.03), (-0.1, -0.13, hz - 0.18), (0.0, -0.15, hz - 0.2), (0.1, -0.13, hz - 0.18), (0.2, -0.04, hz - 0.03), (0.13, 0.0, hz + 0.15)], 0.0025, HAT2I, grp, res=2)
         elif name == "chef":
             lathe(f"{pre}_band", [(hz + 0.03, 0.226, 0.216), (hz + 0.13, 0.232, 0.222)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False), wave=lambda a, z: 1 + 0.01 * math.cos(16 * a))
             ellip(f"{pre}_puff", (0.27, 0.26, 0.15), (0, 0.01, hz + 0.24), HAT, grp, seg=28, rings=14, deform=lambda c: c * (1 + 0.07 * max(0.0, c.z + 0.3) * math.sin(6 * math.atan2(c.y, c.x))))
@@ -1109,13 +1196,13 @@ def build_avatar():
             ring(f"{pre}_band", 1.0, 0.016, (0, 0.01, hz + 0.035), GOLD, grp, n=24, scale=(0.238, 0.23))
             tube(f"{pre}_ridge", [(0, -0.22, hz + 0.06), (0, -0.16, hz + 0.19), (0, 0.01, hz + 0.26), (0, 0.18, hz + 0.18), (0, 0.24, hz + 0.05)], 0.012, GOLD, grp)
             for side in (-1, 1):
-                tube(f"{pre}_horn{side}", [(side * 0.2, 0.0, hz + 0.1), (side * 0.29, -0.01, hz + 0.15), (side * 0.33, -0.03, hz + 0.26), (side * 0.3, -0.05, hz + 0.34)], 0.038, HORN, grp, radii=[1.0, 0.8, 0.45, 0.06], res=4, bev=2)
+                tube(f"{pre}_horn{side}", [(side * 0.2, 0.0, hz + 0.1), (side * 0.29, -0.01, hz + 0.15), (side * 0.33, -0.03, hz + 0.26), (side * 0.3, -0.05, hz + 0.34)], 0.038, HAT2H, grp, radii=[1.0, 0.8, 0.45, 0.06], res=4, bev=2)
         elif name == "pirate":
             lathe(f"{pre}_crown", [(hz + 0.04, 0.226, 0.216), (hz + 0.16, 0.21, 0.2), (hz + 0.225, 0.18, 0.17), (hz + 0.25, 0.0)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
             disc(f"{pre}_brim", 0.215, 0.33, hz + 0.06, HAT, grp, lift=lambda a, r: ((r - 0.215) / 0.115) ** 1.2 * 0.09 * (1 - 0.85 * max(0.0, math.cos(3 * (a + math.pi / 2)))), seg=28, rings=3)
-            ellip(f"{pre}_skull", (0.03, 0.01, 0.028), (0, -0.215, hz + 0.13), WHITE, grp, seg=12, rings=8, rot=(0.3, 0, 0))
+            ellip(f"{pre}_skull", (0.03, 0.01, 0.028), (0, -0.215, hz + 0.13), HAT2W, grp, seg=12, rings=8, rot=(0.3, 0, 0))
             for side in (-1, 1):
-                tube(f"{pre}_bone{side}", [(-side * 0.04, -0.21, hz + 0.09), (side * 0.04, -0.215, hz + 0.16)], 0.006, WHITE, grp, res=2)
+                tube(f"{pre}_bone{side}", [(-side * 0.04, -0.21, hz + 0.09), (side * 0.04, -0.215, hz + 0.16)], 0.006, HAT2W, grp, res=2)
         elif name == "hardHat":
             lathe(f"{pre}_dome", [(hz + 0.03, 0.24, 0.23), (hz + 0.12, 0.232, 0.222), (hz + 0.2, 0.185, 0.175), (hz + 0.25, 0.1, 0.095), (hz + 0.265, 0.0)], HAT, grp, seg=28, M=T((0, 0.01, 0)), caps=(False, False))
             tube(f"{pre}_ridge", [(0, -0.21, hz + 0.1), (0, -0.14, hz + 0.23), (0, 0.01, hz + 0.28), (0, 0.16, hz + 0.23), (0, 0.23, hz + 0.1)], 0.018, HAT, grp)
@@ -1124,10 +1211,10 @@ def build_avatar():
             lathe(f"{pre}_dome", [(hz + 0.04, 0.238, 0.228), (hz + 0.15, 0.205, 0.195), (hz + 0.22, 0.125, 0.12), (hz + 0.25, 0.0)], HAT, grp, seg=28, M=T((0, 0.01, 0)), caps=(False, False))
             for k in range(4):
                 a = k * math.pi / 2 + math.pi / 4
-                tube(f"{pre}_seam{k}", [(math.cos(a) * 0.236, 0.01 + math.sin(a) * 0.226, hz + 0.045), (math.cos(a) * 0.2, 0.01 + math.sin(a) * 0.19, hz + 0.155), (0, 0.01, hz + 0.25)], 0.005, ACCENT, grp, res=2)
+                tube(f"{pre}_seam{k}", [(math.cos(a) * 0.236, 0.01 + math.sin(a) * 0.226, hz + 0.045), (math.cos(a) * 0.2, 0.01 + math.sin(a) * 0.19, hz + 0.155), (0, 0.01, hz + 0.25)], 0.005, HAT2A, grp, res=2)
             tube(f"{pre}_stalk", [(0, 0.01, hz + 0.24), (0, 0.01, hz + 0.3)], 0.008, METAL, grp, res=2)
-            ellip(f"{pre}_hub", (0.016, 0.016, 0.012), (0, 0.01, hz + 0.305), ACCENT, grp, seg=10, rings=6)
-            for k, m_ in enumerate((ACCENT, WHITE)):
+            ellip(f"{pre}_hub", (0.016, 0.016, 0.012), (0, 0.01, hz + 0.305), HAT2A, grp, seg=10, rings=6)
+            for k, m_ in enumerate((HAT2A, HAT2W)):
                 rbox(f"{pre}_blade{k}", (0.32, 0.045, 0.008), (0, 0.01, hz + 0.305), m_, grp, b=0.45, rot=(0.15 * (-1) ** k, 0, 0.5 + k * math.pi / 2))
         elif name == "catEars":
             tube(f"{pre}_band", [(-0.205, 0.0, hz - 0.01), (-0.17, -0.01, hz + 0.15), (0, -0.01, hz + 0.235), (0.17, -0.01, hz + 0.15), (0.205, 0.0, hz - 0.01)], 0.01, HAT, grp)
@@ -1140,12 +1227,12 @@ def build_avatar():
             lathe(f"{pre}_crown", [(hz + 0.05, 0.21), (hz + 0.2, 0.18), (hz + 0.3, 0.13), (hz + 0.335, 0.07), (hz + 0.345, 0.0)], HAT, grp, seg=24, M=T((0, 0.01, 0)), caps=(False, False))
             disc(f"{pre}_brim", 0.205, 0.47, hz + 0.06, HAT, grp, lift=lambda a, r: 0.9 * max(0.0, r - 0.3) ** 2 - 0.15 * (r - 0.205) * (1 - min(1.0, (r - 0.205) / 0.1)), seg=24, rings=3)
             ring(f"{pre}_rim", 0.47, 0.018, (0, 0.01, hz + 0.06 + 0.9 * 0.17 ** 2 + 0.01), HAT, grp, n=24, minor=5)
-            lathe(f"{pre}_band", [(hz + 0.1, 0.205), (hz + 0.16, 0.19)], ACCENT, grp, seg=24, M=T((0, 0.01, 0)), wave=lambda a, z: 1.025, caps=(False, False))
-            ring(f"{pre}_trim", 0.34, 0.01, (0, 0.01, hz + 0.06 + 0.9 * 0.04 ** 2 + 0.012), ACCENT, grp, n=24, minor=4)
+            lathe(f"{pre}_band", [(hz + 0.1, 0.205), (hz + 0.16, 0.19)], HAT2A, grp, seg=24, M=T((0, 0.01, 0)), wave=lambda a, z: 1.025, caps=(False, False))
+            ring(f"{pre}_trim", 0.34, 0.01, (0, 0.01, hz + 0.06 + 0.9 * 0.04 ** 2 + 0.012), HAT2A, grp, n=24, minor=4)
         elif name == "wizard":
             disc(f"{pre}_brim", 0.17, 0.36, hz + 0.06, HAT, grp, lift=lambda a, r: -0.25 * max(0.0, r - 0.205) ** 1.5, seg=24, rings=3)
             tube(f"{pre}_cone", [(0, 0.01, hz + 0.05), (0, 0.02, hz + 0.27), (0.03, 0.07, hz + 0.45), (0.12, 0.15, hz + 0.53)], 0.218, HAT, grp, radii=[1.0, 0.72, 0.28, 0.02], res=5, bev=4)
-            ring(f"{pre}_band", 0.2, 0.012, (0, 0.012, hz + 0.08), ACCENT, grp, n=28, minor=5)
+            ring(f"{pre}_band", 0.2, 0.012, (0, 0.012, hz + 0.08), HAT2A, grp, n=28, minor=5)
             for k, (az, h) in enumerate(((0.3, 0.17), (-0.7, 0.26), (1.4, 0.32), (-0.2, 0.36))):
                 rr = 0.205 * (1 - (h - 0.05) / 0.3) * 0.95 + 0.012
                 star = [((0.022 if j % 2 == 0 else 0.009) * math.cos(math.pi / 2 + j * math.pi / 5), (0.022 if j % 2 == 0 else 0.009) * math.sin(math.pi / 2 + j * math.pi / 5)) for j in range(10)]
@@ -1157,9 +1244,9 @@ def build_avatar():
             tube(f"{pre}_nub", [(0.06, 0.02, hz + 0.23), (0.07, 0.02, hz + 0.26)], 0.008, HAT, grp, res=2)
         elif name == "headband":
             lathe(f"{pre}_band", [(hz + 0.035, 0.228, 0.214), (hz + 0.06, 0.232, 0.218), (hz + 0.085, 0.228, 0.214)], HAT, grp, seg=28, M=T((0, 0.012, 0)), caps=(False, False))
-            ring(f"{pre}_stripe", 1.0, 0.006, (0, 0.012, hz + 0.06), WHITE, grp, n=36, minor=4, scale=(0.233, 0.219))
+            ring(f"{pre}_stripe", 1.0, 0.006, (0, 0.012, hz + 0.06), HAT2W, grp, n=36, minor=4, scale=(0.233, 0.219))
 
-    # --- glasses (`frame` colour; lenses fixed): lens shape always matches its rim, except the boxed joke pair
+    # --- glasses (`frame` colour; `lens_*` lenses follow the optional lens colour): lens shape always matches its rim, except the boxed joke pair
     gz = EYE_Z
     GO = 0.022  # how far in front of the face the frame sits
 
@@ -1209,25 +1296,36 @@ def build_avatar():
             lathe(f"{pre}_band", [(gz - 0.03, 0.222, 0.21), (gz + 0.035, 0.222, 0.21)], LENS, grp, seg=24, M=T(HEAD_C), caps=(False, False))
             continue
         if name in ("cyber", "goggles"):
-            lo, hi, rx, ry, m_ = (-0.024, 0.024, 0.226, 0.214, NEON) if name == "cyber" else (-0.045, 0.04, 0.236, 0.224, MIRROR)
-            front = lambda c: c.y > -0.1
+            lo, hi, rx, ry, m_ = (-0.024, 0.024, 0.226, 0.214, NEON) if name == "cyber" else (-0.052, 0.05, 0.236, 0.224, MIRROR)
+            # cyber: a visor band around the front; goggles: a curved shield over the eyes only, with a frame and a nose bridge
+            front = (lambda c: c.y > -0.1) if name == "cyber" else (lambda c: not (c.y < -0.08 and abs(c.x) < 0.152))
             lathe(f"{pre}_lens", [(gz + lo, rx, ry), (gz + (lo + hi) / 2, rx + 0.006, ry + 0.006), (gz + hi, rx, ry)], m_, grp, seg=28, M=T(HEAD_C), caps=(False, False), drop=front)
             for z in (lo, hi):
                 lathe(f"{pre}_edge{int(z * 1000)}", [(gz + z - 0.005, rx + 0.004, ry + 0.004), (gz + z + 0.005, rx + 0.004, ry + 0.004)], FRAME, grp, seg=28, M=T(HEAD_C), caps=(False, False), drop=front)
             lathe(f"{pre}_strap", [(gz - 0.012, 0.218, 0.206), (gz + 0.012, 0.218, 0.206)], FRAME if name == "cyber" else INK, grp, seg=24, M=T(HEAD_C), caps=(False, False))
+            if name == "goggles":
+                for sx in (-1, 1):
+                    rbox(f"{pre}_end{sx}", (0.012, 0.03, hi - lo + 0.012), HEAD_C + Vector((sx * 0.152, -0.172, gz + (lo + hi) / 2)), FRAME, grp, b=0.4, rot=(0, 0, sx * 0.62))
+                rbox(f"{pre}_bridge", (0.016, 0.014, hi - lo + 0.01), HEAD_C + Vector((0, -0.239, gz + (lo + hi) / 2)), FRAME, grp, b=0.4)
             continue
         if name == "pixel":
             # blocky 8-bit shades: one bar and a staircase of square pixels per eye, all in one mesh
             bm = bmesh.new()
-            px = 0.0135
-            cells = [(c + 0.5, 0) for c in range(-7, 7)]
+            px = 0.026
+            cells = [(c + 0.5, 0) for c in range(-6, 6)]
             for side in (-1, 1):
-                for row, cols in ((1, range(0, 5)), (2, range(0, 4)), (3, range(1, 3))):
-                    cells += [(side * (2.5 + c), -row) for c in cols]
+                for row, cols in ((1, range(0, 4)), (2, range(0, 4)), (3, range(1, 3))):
+                    cells += [(side * (1.5 + c), -row) for c in cols]
             for cx, cz in cells:
                 g = bmesh.ops.create_cube(bm, size=px)
-                bmesh.ops.transform(bm, matrix=T(face_pt(cx * px, gz + 0.022 + cz * px, GO + 0.004)), verts=g["verts"])
+                bmesh.ops.transform(bm, matrix=T(face_pt(cx * px, gz + 0.03 + cz * px, GO + 0.006)), verts=g["verts"])
             from_bm(f"{pre}_pixels", bm, FRAME, grp, smooth=False)
+            glint = bmesh.new()
+            for side in (-1, 1):
+                for cx, cz in ((side * 3.5, -1), (side * 2.5, -2)):
+                    g = bmesh.ops.create_cube(glint, size=px * 0.62)
+                    bmesh.ops.transform(glint, matrix=T(face_pt(cx * px, gz + 0.03 + cz * px, GO + 0.006 + px * 0.5)), verts=g["verts"])
+            from_bm(f"{pre}_glint", glint, WHITE, grp, smooth=False)
             for side in (-1, 1):
                 temples(pre, grp, side, gM(side, dz=0.022), 0.06, r=0.004)
             continue
@@ -1238,14 +1336,15 @@ def build_avatar():
                     continue
                 pts = superellipse(0.043, 0.043, 2.0, 20)
                 rim(f"{pre}_rim", pts, M, 0.0055, GOLD, grp)
+                lens(f"{pre}_lens", pts, M, CLEAR, grp)
                 tube(f"{pre}_chain", [M @ Vector((0, -0.043, 0)), face_pt(0.1, -0.11, 0.03), face_pt(0.13, -0.17, 0.03), face_pt(0.17, -0.2, 0.0)], 0.0025, GOLD, grp, res=2)
                 continue
             if name == "round":
-                pts, r_, lm, edge = superellipse(0.045, 0.045, 2.0, 20), 0.0055, None, 0.045
+                pts, r_, lm, edge = superellipse(0.045, 0.045, 2.0, 20), 0.0055, CLEAR, 0.045
             elif name == "wire":
-                pts, r_, lm, edge = superellipse(0.04, 0.04, 2.0, 20), 0.0032, None, 0.04
+                pts, r_, lm, edge = superellipse(0.04, 0.04, 2.0, 20), 0.0032, CLEAR, 0.04
             elif name == "square":
-                pts, r_, lm, edge = superellipse(0.05, 0.038, 5.0, 20), 0.0055, None, 0.05
+                pts, r_, lm, edge = superellipse(0.05, 0.038, 5.0, 20), 0.0055, CLEAR, 0.05
             elif name == "shades":
                 pts, r_, lm, edge = superellipse(0.054, 0.04, 5.0, 24), 0.0065, LENS, 0.054
             elif name == "boxed":
@@ -1269,7 +1368,7 @@ def build_avatar():
             elif name == "paper3d":
                 pts, r_, lm, edge = superellipse(0.05, 0.034, 8.0, 20), 0.0065, RED3D if side < 0 else BLUE3D, 0.05
             elif name == "nerd":
-                pts, r_, lm, edge = superellipse(0.052, 0.042, 4.0, 20), 0.009, None, 0.052
+                pts, r_, lm, edge = superellipse(0.052, 0.042, 4.0, 20), 0.009, CLEAR, 0.052
             elif name == "steampunk":
                 Mg = gM(side, out=0.006)
                 lathe(f"{pre}_tube{side}", [(0.0, 0.041), (0.026, 0.041), (0.026, 0.033)], METAL, grp, seg=18, M=Mg, caps=(False, False))
@@ -1278,7 +1377,7 @@ def build_avatar():
                 lathe(f"{pre}_glass{side}", [(0.022, 0.034), (0.022, 0.0)], AMBER, grp, seg=18, M=Mg, caps=(False, False))
                 continue
             else:  # catEye
-                pts, r_, lm, edge = mirror(cat_eye(0.052, 0.036), side), 0.0075, None, 0.052
+                pts, r_, lm, edge = mirror(cat_eye(0.052, 0.036), side), 0.0075, CLEAR, 0.052
             material = WHITE if name == "paper3d" else FRAME
             rim(f"{pre}_rim{side}", pts, M, r_, material, grp)
             if lm is not None:
@@ -1336,21 +1435,21 @@ def build_avatar():
             rbox(f"{pre}_pocket", (0.15, 0.03, 0.09), (0, back + 0.1, 0.38), EXTRA, grp, b=0.4)
             tube(f"{pre}_zip", [(-0.065, back + 0.115, 0.425), (0, back + 0.118, 0.428), (0.065, back + 0.115, 0.425)], 0.004, METAL, grp)
             for side in (-1, 1):
-                tube(f"{pre}_strap{side}", [(side * 0.07, back + 0.01, 0.53), (side * 0.08, 0.0, 0.575), (side * 0.085, -back + 0.005, 0.52), (side * 0.09, -back + 0.01, 0.4)], 0.009, INK, grp)
+                tube(f"{pre}_strap{side}", [(side * 0.07, back + 0.01, 0.53), (side * 0.08, 0.0, 0.575), (side * 0.085, -back + 0.005, 0.52), (side * 0.09, -back + 0.01, 0.4)], 0.009, EXT2I, grp)
         elif name == "scarf":
             lathe(f"{pre}_wrap", [(0.54, 0.105, 0.1), (0.57, 0.11, 0.105), (0.6, 0.085, 0.08)], EXTRA, grp, seg=24, wave=lambda a, z: 1 + 0.04 * math.sin(3 * a + 40 * z), caps=(False, False))
             tube(f"{pre}_tail", [(0.05, -0.095, 0.56), (0.06, -0.12, 0.5), (0.055, -0.115, 0.42)], 0.024, EXTRA, grp, radii=[1, 1, 0.9])
             for k in range(3):
                 tube(f"{pre}_fringe{k}", [(0.04 + k * 0.012, -0.115, 0.405), (0.04 + k * 0.012, -0.115, 0.38)], 0.004, EXTRA, grp)
         elif name == "headphones":
-            tube(f"{pre}_band", [(-0.215, 0.005, hz + 0.02), (-0.18, 0.0, hz + 0.16), (0, 0.0, hz + 0.24), (0.18, 0.0, hz + 0.16), (0.215, 0.005, hz + 0.02)], 0.013, INK, hg)
+            tube(f"{pre}_band", [(-0.215, 0.005, hz + 0.02), (-0.18, 0.0, hz + 0.16), (0, 0.0, hz + 0.24), (0.18, 0.0, hz + 0.16), (0.215, 0.005, hz + 0.02)], 0.013, EXT2I, hg)
             for side in (-1, 1):
                 lathe(f"{pre}_cup{side}", [(0, 0.06), (0.025, 0.062), (0.04, 0.045), (0.045, 0.0)], EXTRA, hg, seg=20, M=T((side * 0.19, 0.005, hz)) @ R((0, side * math.pi / 2, 0)), caps=(True, False))
-                lathe(f"{pre}_pad{side}", [(0, 0.05), (0.012, 0.055), (0.02, 0.04)], INK, hg, seg=20, M=T((side * 0.185, 0.005, hz)) @ R((0, -side * math.pi / 2, 0)), caps=(False, True))
+                lathe(f"{pre}_pad{side}", [(0, 0.05), (0.012, 0.055), (0.02, 0.04)], EXT2I, hg, seg=20, M=T((side * 0.185, 0.005, hz)) @ R((0, -side * math.pi / 2, 0)), caps=(False, True))
         elif name == "chain":
             pts = [(math.cos(t) * 0.08, -0.04 + math.sin(t) * 0.07 - (0.05 if math.sin(t) < 0 else 0) * abs(math.sin(t)) ** 2, 0.57 - 0.07 * max(0.0, -math.sin(t))) for t in [k * math.pi / 8 for k in range(16)]]
-            tube(f"{pre}_loop", pts, 0.006, GOLD, grp, cyclic=True, res=3)
-            ellip(f"{pre}_pendant", (0.02, 0.008, 0.024), (0, -0.165, 0.49), GOLD, grp, seg=12, rings=8, rot=(0.2, 0, 0))
+            tube(f"{pre}_loop", pts, 0.006, EXT2G, grp, cyclic=True, res=3)
+            ellip(f"{pre}_pendant", (0.02, 0.008, 0.024), (0, -0.165, 0.49), EXT2G, grp, seg=12, rings=8, rot=(0.2, 0, 0))
         elif name == "cape":
             bm = bmesh.new()
             nx, nz = 12, 10
@@ -1367,7 +1466,7 @@ def build_avatar():
                 for i in range(nx):
                     bm.faces.new((vs[j][i], vs[j + 1][i], vs[j + 1][i + 1], vs[j][i + 1]))
             from_bm(f"{pre}_cloth", bm, EXTRA, grp)
-            ring(f"{pre}_clasp", 0.02, 0.006, (0, -0.07, 0.575), GOLD, grp, rot=(math.pi / 2, 0, 0), n=10)
+            ring(f"{pre}_clasp", 0.02, 0.006, (0, -0.07, 0.575), EXT2G, grp, rot=(math.pi / 2, 0, 0), n=10)
         elif name == "earrings":
             for side in (-1, 1):
                 ring(f"{pre}_hoop{side}", 0.017, 0.0035, (side * 0.205, 0.008, hz - 0.082), EXTRA, hg, rot=(0, math.pi / 2, 0), n=16, minor=5)
@@ -1408,8 +1507,8 @@ def build_avatar():
         elif name == "eyePatch":
             p, r = surf(EYE_X, EYE_Z, 0.008)
             ellip(f"{pre}_patch", (0.047, 0.008, 0.043), p, EXTRA, hg, seg=14, rings=8, rot=r)
-            tube(f"{pre}_strap", [face_pt(0.03, 0.035, 0.008), face_pt(-0.05, 0.11, 0.006), Vector((-0.17, -0.02, hz + 0.12)), Vector((-0.2, 0.08, hz + 0.08))], 0.0045, INK, hg, res=2)
-            tube(f"{pre}_strap2", [face_pt(0.115, 0.0, 0.006), Vector((0.205, 0.0, hz - 0.01)), Vector((0.19, 0.1, hz + 0.02))], 0.0045, INK, hg, res=2)
+            tube(f"{pre}_strap", [face_pt(0.03, 0.035, 0.008), face_pt(-0.05, 0.11, 0.006), Vector((-0.17, -0.02, hz + 0.12)), Vector((-0.2, 0.08, hz + 0.08))], 0.0045, EXT2I, hg, res=2)
+            tube(f"{pre}_strap2", [face_pt(0.115, 0.0, 0.006), Vector((0.205, 0.0, hz - 0.01)), Vector((0.19, 0.1, hz + 0.02))], 0.0045, EXT2I, hg, res=2)
         elif name == "blush":
             for side in (-1, 1):
                 p, r = surf(side * 0.098, -0.05, 0.0)
@@ -1568,21 +1667,37 @@ def build_cars():
     SAUSAGE = mat("sausage", (0.68, 0.2, 0.14), rough=0.35, coat=0.6)
     MUSTARD = mat("mustard", (1.0, 0.8, 0.08), rough=0.4)
     KETCHUP = mat("ketchup", (0.85, 0.08, 0.06), rough=0.3)
-    URETHANE = mat("urethane", (1.0, 0.86, 0.42), rough=0.5)
+    URETHANE = mat("accent_urethane", (1.0, 0.86, 0.42), rough=0.5)
     FLAME = mat("flame", (1.0, 0.45, 0.08), emit=4.0)
     WHITE = mat("white", (0.95, 0.95, 0.94), rough=0.4)
     GOLD_C = mat("gold", (1.0, 0.77, 0.3), rough=0.25, metal=1.0)
     ACCENT = mat("accent", (0.96, 0.96, 0.95), rough=0.35, coat=0.6)  # optional stripes/trim, recoloured apart from paint
 
+    def own(prefix, m):
+        """Copy of a fixed material that a ride colour may repaint: `accent_<name>` takes the optional accent (unset,
+        it keeps the built-in look); `paint_<name>` is a natural material (bun, wood, rug) softly tinted by the paint
+        only when the rider asked for a tint."""
+        name = f"{prefix}_{m.name}"
+        if name not in MATS:
+            k = m.copy()
+            k.name = name
+            MATS[name] = k
+        return MATS[name]
+
+    ACC_RIM, ACC_TRIM, ACC_CHROME, ACC_GOLD = own("accent", RIM), own("accent", TRIM), own("accent", CHROME), own("accent", GOLD_C)
+    NAT_BUN = own("paint", BUN)
+    NAT_WOOD = mat("paint_wood", (0.78, 0.56, 0.32), rough=0.6)
+    NAT_RUG = mat("paint_rug", (0.58, 0.1, 0.13), rough=0.8, sheen=0.4)
+
     def wheel(pre, x, y, r, parent, w=0.26, side=1):
         M = T((x, y, r)) @ R((0, math.pi / 2 * side, 0))
         lathe(f"{pre}_tyre", [(-w / 2, r * 0.62), (-w / 2, r * 0.9), (-w / 2 + 0.03, r), (w / 2 - 0.03, r), (w / 2, r * 0.9), (w / 2, r * 0.62)], TYRE, parent, seg=16, M=M, caps=(False, False))
-        lathe(f"{pre}_rim", [(-w / 2 + 0.01, r * 0.64), (w / 2 - 0.035, r * 0.64), (w / 2 - 0.02, r * 0.6), (w / 2 - 0.03, r * 0.2), (w / 2 - 0.005, r * 0.16), (w / 2 + 0.005, 0.0)], RIM, parent, seg=16, M=M, caps=(True, False))
+        lathe(f"{pre}_rim", [(-w / 2 + 0.01, r * 0.64), (w / 2 - 0.035, r * 0.64), (w / 2 - 0.02, r * 0.6), (w / 2 - 0.03, r * 0.2), (w / 2 - 0.005, r * 0.16), (w / 2 + 0.005, 0.0)], ACC_RIM, parent, seg=16, M=M, caps=(True, False))
         for k in range(5):
             a = k * 2 * math.pi / 5 + 0.3
             c = M @ Vector((math.cos(a) * r * 0.4, math.sin(a) * r * 0.4, w / 2 - 0.022))
             d = (M.to_3x3() @ Vector((math.cos(a), math.sin(a), 0))).normalized()
-            rbox(f"{pre}_spoke{k}", (0.03, r * 0.12, r * 0.44), c, RIM, parent, seg=0, rot=(math.atan2(-d.y, d.z), 0, 0))
+            rbox(f"{pre}_spoke{k}", (0.03, r * 0.12, r * 0.44), c, ACC_RIM, parent, seg=0, rot=(math.atan2(-d.y, d.z), 0, 0))
 
     def lights(pre, root, hw, fy, ry, z, h=0.12, w=0.34):
         for side in (-1, 1):
@@ -1592,7 +1707,7 @@ def build_cars():
     def smallwheel(pre, x, y, z, r, w, parent, tyre=None, rim=None):
         M = T((x, y, z)) @ R((0, math.pi / 2, 0))
         lathe(f"{pre}_tyre", [(-w / 2, r * 0.6), (-w / 2, r * 0.88), (-w / 2 + w * 0.2, r), (w / 2 - w * 0.2, r), (w / 2, r * 0.88), (w / 2, r * 0.6)], tyre or TYRE, parent, seg=14, M=M, caps=(False, False))
-        lathe(f"{pre}_hub", [(-w / 2 + 0.002, r * 0.62), (w / 2 - 0.002, r * 0.62), (w / 2 + 0.002, 0.0)], rim or RIM, parent, seg=12, M=M, caps=(True, False))
+        lathe(f"{pre}_hub", [(-w / 2 + 0.002, r * 0.62), (w / 2 - 0.002, r * 0.62), (w / 2 + 0.002, 0.0)], rim or ACC_RIM, parent, seg=12, M=M, caps=(True, False))
 
     def car(name, L, W, wr, hood, belt, roof, nose, deck, ws, rf, rr, rb, cabin_w=0.86, tumble=0.82, wheel_y=0.32, glass=True, rider=0.65):
         """Side-profile car: hood/belt/roof heights, windscreen base ws, roof front rf / rear rr, rear base rb (y).
@@ -1675,7 +1790,7 @@ def build_cars():
         rbox(f"car_van_track{side}", (0.02, 1.6, 0.03), (side * 1.0, 0.6, 1.2), TRIM, vn, seg=0)
         rbox(f"car_van_seam{side}", (0.012, 0.018, 0.75), (side * 0.995, 1.4, 0.88), TRIM, vn, seg=0)
     pk = car("pickup", 5.2, 1.95, 0.42, 1.12, 1.18, 1.86, 0.98, 1.18, -1.05, -0.6, 0.3, 0.45)
-    rbox("car_pickup_bed", (1.95 * 0.86, 1.95, 0.08), (0, 1.55, 1.15), TRIM, pk, b=0.3, seg=1)
+    rbox("car_pickup_bed", (1.95 * 0.86, 1.95, 0.08), (0, 1.55, 1.15), ACC_TRIM, pk, b=0.3, seg=1)
     for side in (-1, 1):
         rbox(f"car_pickup_bedrail{side}", (0.06, 2.0, 0.06), (side * 0.9, 1.55, 1.21), CHROME, pk, b=0.4, seg=1)
     rbox("car_pickup_tailgate", (1.86, 0.06, 0.12), (0, 2.55, 1.22), PAINT, pk, b=0.4, seg=1)
@@ -1687,8 +1802,8 @@ def build_cars():
     rbox("car_convertible_screen", (1.82 * 0.82, 0.04, 0.34), (0, -0.62, 0.98), GLASS, cv, b=0.3, rot=(-0.55, 0, 0))
     tube("car_convertible_frame", [(-0.75, -0.6, 0.8), (-0.74, -0.73, 1.12), (0.74, -0.73, 1.12), (0.75, -0.6, 0.8)], 0.025, CHROME, cv)
     for x in (-0.36, 0.36):
-        rbox(f"car_convertible_seat{x}", (0.46, 0.4, 0.14), (x, 0.05, 0.62), TRIM, cv, b=0.35)
-        rbox(f"car_convertible_back{x}", (0.44, 0.12, 0.34), (x, 0.32, 0.8), TRIM, cv, b=0.4, rot=(0.2, 0, 0))
+        rbox(f"car_convertible_seat{x}", (0.46, 0.4, 0.14), (x, 0.05, 0.62), ACC_TRIM, cv, b=0.35)
+        rbox(f"car_convertible_back{x}", (0.44, 0.12, 0.34), (x, 0.32, 0.8), ACC_TRIM, cv, b=0.4, rot=(0.2, 0, 0))
         tube(f"car_convertible_hoop{x}", [(x - 0.18, 0.55, 0.82), (x - 0.15, 0.58, 1.12), (x + 0.15, 0.58, 1.12), (x + 0.18, 0.55, 0.82)], 0.03, CHROME, cv)
     ride("convertible", 0.3, (-0.36, 0.08, 0.74), 0.5, WAVE)
 
@@ -1697,7 +1812,7 @@ def build_cars():
     for y, n in ((-0.78, "F"), (0.78, "B")):
         M = T((0, y, 0.34)) @ R((0, math.pi / 2, 0))
         lathe(f"car_motorcycle_tyre{n}", [(-0.07, 0.24), (-0.075, 0.3), (-0.04, 0.34), (0.04, 0.34), (0.075, 0.3), (0.07, 0.24)], TYRE, mc, seg=20, M=M, caps=(False, False))
-        lathe(f"car_motorcycle_rim{n}", [(-0.05, 0.25), (0.05, 0.25), (0.04, 0.1), (0.06, 0.06), (0.065, 0.0)], RIM, mc, seg=20, M=M, caps=(False, False))
+        lathe(f"car_motorcycle_rim{n}", [(-0.05, 0.25), (0.05, 0.25), (0.04, 0.1), (0.06, 0.06), (0.065, 0.0)], ACC_RIM, mc, seg=20, M=M, caps=(False, False))
     tube("car_motorcycle_frame", [(0, 0.78, 0.36), (0, 0.3, 0.55), (0, -0.25, 0.7), (0, -0.5, 0.85)], 0.05, CHROME, mc)
     for fx in (-0.06, 0.06):  # twin fork legs, stanchion caps
         tube(f"car_motorcycle_fork{fx}", [(fx, -0.78, 0.34), (fx, -0.62, 0.7), (fx * 0.6, -0.52, 1.0)], 0.03, CHROME, mc)
@@ -1711,7 +1826,7 @@ def build_cars():
         tube(f"car_motorcycle_grip{side}", [(hp.x - side * 0.05, hp.y - 0.02, hp.z), (hp.x + side * 0.05, hp.y + 0.02, hp.z)], 0.035, TYRE, mc)
     GEOM["motorcycle"] = {"grips": [[round(c, 4) for c in hp] for hp in mh]}
     ellip("car_motorcycle_tank", (0.2, 0.3, 0.15), (0, -0.26, 0.84), PAINT, mc, seg=20, rings=12, deform=lambda c: Vector((c.x * (1 - 0.3 * max(0.0, c.y)), c.y, c.z)))
-    rbox("car_motorcycle_seat", (0.26, 0.55, 0.09), (0, 0.18, 0.8), TRIM, mc, b=0.45, rot=(0.08, 0, 0))
+    rbox("car_motorcycle_seat", (0.26, 0.55, 0.09), (0, 0.18, 0.8), ACC_TRIM, mc, b=0.45, rot=(0.08, 0, 0))
     ellip("car_motorcycle_fender", (0.12, 0.3, 0.2), (0, 0.78, 0.42), PAINT, mc, seg=16, rings=10, keep=lambda c: c.z > 0.3)
     ellip("car_motorcycle_ffender", (0.11, 0.24, 0.16), (0, -0.8, 0.46), PAINT, mc, seg=16, rings=10, keep=lambda c: c.z > 0.3)
     rbox("car_motorcycle_engine", (0.3, 0.4, 0.28), (0, 0.0, 0.5), RIM, mc, b=0.3)
@@ -1724,7 +1839,7 @@ def build_cars():
     # windscreen and chunky wheels
     hd = empty("car_hotdog")
     for side in (-1, 1):
-        ellip(f"car_hotdog_bun{side}", (0.55, 2.25, 0.36), (side * 0.36, 0, 0.75), BUN, hd, seg=18, rings=10, deform=lambda c: Vector((c.x, c.y, c.z * (1 + 0.15 * max(0.0, c.z)))))
+        ellip(f"car_hotdog_bun{side}", (0.55, 2.25, 0.36), (side * 0.36, 0, 0.75), NAT_BUN, hd, seg=18, rings=10, deform=lambda c: Vector((c.x, c.y, c.z * (1 + 0.15 * max(0.0, c.z)))))
     lathe("car_hotdog_sausage", [(-2.55, 0.0), (-2.5, 0.2), (-2.35, 0.32), (2.35, 0.32), (2.5, 0.2), (2.55, 0.0)], SAUSAGE, hd, seg=16, M=T((0, 0, 1.02)) @ R((math.pi / 2, 0, 0)), caps=(False, False))
     tube("car_hotdog_mustard", [(math.sin(i * 1.6) * 0.18, 0.4 + i * 0.2, 1.34) for i in range(9)], 0.05, MUSTARD, hd)
     tube("car_hotdog_ketchup", [(math.sin(i * 1.6 + 1.6) * 0.16, -2.1 + i * 0.16, 1.33) for i in range(7)], 0.045, KETCHUP, hd)
@@ -1742,9 +1857,9 @@ def build_cars():
 
     # skateboard: deck with kicktails, grip tape, trucks, urethane wheels; rider stands sideways, arms out
     sk = empty("car_skateboard")
-    rbox("car_skateboard_deck", (0.2, 0.56, 0.024), (0, 0, 0.085), PAINT, sk, b=0.45)
+    rbox("car_skateboard_deck", (0.2, 0.56, 0.024), (0, 0, 0.085), NAT_WOOD, sk, b=0.45)
     for s in (-1, 1):
-        rbox(f"car_skateboard_tail{s}", (0.2, 0.14, 0.024), (0, s * 0.33, 0.1), PAINT, sk, b=0.45, rot=(s * 0.32, 0, 0))
+        rbox(f"car_skateboard_tail{s}", (0.2, 0.14, 0.024), (0, s * 0.33, 0.1), NAT_WOOD, sk, b=0.45, rot=(s * 0.32, 0, 0))
         rbox(f"car_skateboard_truck{s}", (0.17, 0.03, 0.03), (0, s * 0.2, 0.055), RIM, sk, b=0.3)
         for x in (-1, 1):
             smallwheel(f"car_skateboard_w{s}{x}", x * 0.085, s * 0.2, 0.036, 0.036, 0.034, sk, tyre=URETHANE, rim=URETHANE)
@@ -1763,8 +1878,8 @@ def build_cars():
     sc_seat = (0, 0.0, 0.1 + 0.3 * 0.75)
     hands = [hand(1.0, sc_seat, 0.75, SCOOT, s) for s in (-1, 1)]
     by, bz = (hands[0].y + hands[1].y) / 2, (hands[0].z + hands[1].z) / 2
-    tube("car_scooter_stem", [(0, -0.27, 0.07), (0, (by - 0.27) / 2 - 0.01, (bz + 0.07) / 2), (0, by, bz)], 0.018, CHROME, sc)
-    tube("car_scooter_bars", [(hands[0].x - 0.02, by, bz), (hands[1].x + 0.02, by, bz)], 0.014, CHROME, sc)
+    tube("car_scooter_stem", [(0, -0.27, 0.07), (0, (by - 0.27) / 2 - 0.01, (bz + 0.07) / 2), (0, by, bz)], 0.018, PAINT, sc)
+    tube("car_scooter_bars", [(hands[0].x - 0.02, by, bz), (hands[1].x + 0.02, by, bz)], 0.014, ACC_CHROME, sc)
     for side, hp in zip((-1, 1), hands):
         tube(f"car_scooter_grip{side}", [(hp.x - 0.03, hp.y, hp.z), (hp.x + 0.03, hp.y, hp.z)], 0.02, PAINT, sc)
     rbox("car_scooter_clamp", (0.05, 0.05, 0.04), (0, by, bz - 0.015), TRIM, sc, b=0.4, seg=1)
@@ -1793,31 +1908,30 @@ def build_cars():
     # shopping cart: wire basket (light metal panels with ribs), coloured handle and bumper, swivel casters;
     # the rider sits in the basket, hands up
     ct = empty("car_cart")
-    WIRE = mat("wire", (0.78, 0.8, 0.84), rough=0.3, metal=0.6)
-    rbox("car_cart_floor", (0.34, 0.46, 0.012), (0, 0, 0.3), WIRE, ct, b=0.3, seg=1)
+    rbox("car_cart_floor", (0.34, 0.46, 0.012), (0, 0, 0.3), PAINT, ct, b=0.3, seg=1)
     for s in (-1, 1):
-        rbox(f"car_cart_side{s}", (0.012, 0.5, 0.24), (s * 0.18, 0, 0.42), WIRE, ct, b=0.3, seg=1, rot=(0, s * 0.08, 0))
+        rbox(f"car_cart_side{s}", (0.012, 0.5, 0.24), (s * 0.18, 0, 0.42), PAINT, ct, b=0.3, seg=1, rot=(0, s * 0.08, 0))
         for k in range(4):
-            tube(f"car_cart_rib{s}{k}", [(s * 0.188, -0.18 + k * 0.12, 0.3), (s * 0.2, -0.18 + k * 0.12, 0.545)], 0.006, CHROME, ct)
-    rbox("car_cart_front", (0.36, 0.012, 0.24), (0, -0.25, 0.42), WIRE, ct, b=0.3, seg=1)
-    rbox("car_cart_back", (0.36, 0.012, 0.24), (0, 0.25, 0.42), WIRE, ct, b=0.3, seg=1)
-    ring("car_cart_rim", 1.0, 0.01, (0, 0, 0.545), CHROME, ct, n=24, scale=(0.2, 0.26))
-    tube("car_cart_handle", [(-0.2, 0.34, 0.62), (0.2, 0.34, 0.62)], 0.022, PAINT, ct)
+            tube(f"car_cart_rib{s}{k}", [(s * 0.188, -0.18 + k * 0.12, 0.3), (s * 0.2, -0.18 + k * 0.12, 0.545)], 0.006, ACC_CHROME, ct)
+    rbox("car_cart_front", (0.36, 0.012, 0.24), (0, -0.25, 0.42), PAINT, ct, b=0.3, seg=1)
+    rbox("car_cart_back", (0.36, 0.012, 0.24), (0, 0.25, 0.42), PAINT, ct, b=0.3, seg=1)
+    ring("car_cart_rim", 1.0, 0.01, (0, 0, 0.545), ACC_CHROME, ct, n=24, scale=(0.2, 0.26))
+    tube("car_cart_handle", [(-0.2, 0.34, 0.62), (0.2, 0.34, 0.62)], 0.022, ACCENT, ct)
     for s in (-1, 1):
-        tube(f"car_cart_post{s}", [(s * 0.19, 0.25, 0.3), (s * 0.19, 0.3, 0.48), (s * 0.19, 0.34, 0.62)], 0.012, CHROME, ct)
+        tube(f"car_cart_post{s}", [(s * 0.19, 0.25, 0.3), (s * 0.19, 0.3, 0.48), (s * 0.19, 0.34, 0.62)], 0.012, ACC_CHROME, ct)
         # chassis: bottom rail joining both casters, rear upright to the basket, front strut; each caster hangs from
         # a fork + swivel plate on the rail, so no wheel floats
-        tube(f"car_cart_leg{s}", [(s * 0.17, -0.22, 0.09), (s * 0.18, 0.0, 0.18), (s * 0.18, 0.2, 0.3)], 0.012, CHROME, ct)
-        tube(f"car_cart_rail{s}", [(s * 0.17, -0.25, 0.09), (s * 0.17, 0.25, 0.09)], 0.012, CHROME, ct)
-        tube(f"car_cart_rear{s}", [(s * 0.17, 0.24, 0.09), (s * 0.18, 0.25, 0.3)], 0.012, CHROME, ct)
+        tube(f"car_cart_leg{s}", [(s * 0.17, -0.22, 0.09), (s * 0.18, 0.0, 0.18), (s * 0.18, 0.2, 0.3)], 0.012, ACC_CHROME, ct)
+        tube(f"car_cart_rail{s}", [(s * 0.17, -0.25, 0.09), (s * 0.17, 0.25, 0.09)], 0.012, ACC_CHROME, ct)
+        tube(f"car_cart_rear{s}", [(s * 0.17, 0.24, 0.09), (s * 0.18, 0.25, 0.3)], 0.012, ACC_CHROME, ct)
         for y in (-0.22, 0.22):
-            rbox(f"car_cart_plate{s}{y}", (0.04, 0.04, 0.012), (s * 0.17, y, 0.08), CHROME, ct, b=0.3, seg=1)
+            rbox(f"car_cart_plate{s}{y}", (0.04, 0.04, 0.012), (s * 0.17, y, 0.08), ACC_CHROME, ct, b=0.3, seg=1)
             for f in (-1, 1):
-                rbox(f"car_cart_fork{s}{y}{f}", (0.005, 0.016, 0.05), (s * 0.17 + f * 0.016, y, 0.055), CHROME, ct, b=0.2, seg=1)
+                rbox(f"car_cart_fork{s}{y}{f}", (0.005, 0.016, 0.05), (s * 0.17 + f * 0.016, y, 0.055), ACC_CHROME, ct, b=0.2, seg=1)
             smallwheel(f"car_cart_w{s}{y}", s * 0.17, y, 0.035, 0.035, 0.025, ct)
-    tube("car_cart_axle", [(-0.17, 0.25, 0.09), (0.17, 0.25, 0.09)], 0.01, CHROME, ct)
-    tube("car_cart_crossF", [(-0.17, -0.25, 0.09), (0.17, -0.25, 0.09)], 0.01, CHROME, ct)
-    rbox("car_cart_bumper", (0.38, 0.03, 0.05), (0, -0.27, 0.32), PAINT, ct, b=0.4)
+    tube("car_cart_axle", [(-0.17, 0.25, 0.09), (0.17, 0.25, 0.09)], 0.01, ACC_CHROME, ct)
+    tube("car_cart_crossF", [(-0.17, -0.25, 0.09), (0.17, -0.25, 0.09)], 0.01, ACC_CHROME, ct)
+    rbox("car_cart_bumper", (0.38, 0.03, 0.05), (0, -0.27, 0.32), ACCENT, ct, b=0.4)
     ride("cart", 1.0, (0, 0.06, 0.42), 0.7, CART)
 
     # clawfoot bathtub: painted shell, porcelain inside, water with foam, gold feet, a rubber duck on the rim
@@ -1828,13 +1942,13 @@ def build_cars():
     BEAK = mat("beak", (1.0, 0.45, 0.1), rough=0.45)
     lathe("car_bathtub_shell", [(0.1, 0.15, 0.3), (0.16, 0.21, 0.4), (0.3, 0.24, 0.45), (0.42, 0.25, 0.46)], PAINT, bt, seg=28, caps=(True, False))
     lathe("car_bathtub_inner", [(0.2, 0.19, 0.38), (0.33, 0.225, 0.425), (0.42, 0.232, 0.442)], PORC, bt, seg=28, caps=(True, False))
-    ring("car_bathtub_rim", 1.0, 0.018, (0, 0, 0.42), PORC, bt, n=32, scale=(0.243, 0.452))
+    ring("car_bathtub_rim", 1.0, 0.018, (0, 0, 0.42), own("accent", PORC), bt, n=32, scale=(0.243, 0.452))
     lathe("car_bathtub_water", [(0.34, 0.226, 0.428), (0.345, 0.0)], WATER, bt, seg=28, caps=(False, False))
     for k, (x, y, r) in enumerate(((0.12, -0.2, 0.045), (0.15, -0.12, 0.035), (-0.13, 0.18, 0.04), (-0.08, 0.27, 0.03), (0.1, 0.3, 0.035), (-0.15, -0.25, 0.03))):
         ellip(f"car_bathtub_foam{k}", (r, r, r * 0.7), (x, y, 0.35), PORC, bt, seg=10, rings=6)
     for sx in (-1, 1):
         for sy in (-1, 1):
-            ellip(f"car_bathtub_foot{sx}{sy}", (0.035, 0.035, 0.06), (sx * 0.15, sy * 0.3, 0.06), GOLD_C, bt, seg=10, rings=6)
+            ellip(f"car_bathtub_foot{sx}{sy}", (0.035, 0.035, 0.06), (sx * 0.15, sy * 0.3, 0.06), ACC_GOLD, bt, seg=10, rings=6)
     ellip("car_bathtub_duck", (0.04, 0.05, 0.035), (0.13, -0.38, 0.45), DUCK, bt, seg=12, rings=8)
     ellip("car_bathtub_duckhead", (0.026, 0.026, 0.026), (0.13, -0.41, 0.49), DUCK, bt, seg=10, rings=6)
     ellip("car_bathtub_beak", (0.012, 0.016, 0.007), (0.13, -0.435, 0.488), BEAK, bt, seg=8, rings=4)
@@ -1854,14 +1968,14 @@ def build_cars():
         bmesh.ops.solidify(bm, geom=bm.faces[:], thickness=thick)
         return from_bm(name, bm, material, cp)
 
-    rug("car_carpet_rug", 0.95, 0.6, 0.24, PAINT, 0.018)
+    rug("car_carpet_rug", 0.95, 0.6, 0.24, NAT_RUG, 0.018)
     rug("car_carpet_medallion", 0.6, 0.3, 0.262, ACCENT, 0.004)
     for sx in (-1, 1):
-        tube(f"car_carpet_edge{sx}", [(sx * 0.3, -0.475 + i * 0.095, 0.25 + 0.025 * math.sin((-0.475 + i * 0.095) * 9 + 0.6) + 0.02) for i in range(11)], 0.012, GOLD_C, cp)
+        tube(f"car_carpet_edge{sx}", [(sx * 0.3, -0.475 + i * 0.095, 0.25 + 0.025 * math.sin((-0.475 + i * 0.095) * 9 + 0.6) + 0.02) for i in range(11)], 0.012, ACC_GOLD, cp)
         for sy in (-1, 1):
             for k in range(3):
                 x = sx * (0.12 + k * 0.08)
-                tube(f"car_carpet_tassel{sx}{sy}{k}", [(x, sy * 0.47, 0.25 + 0.025 * math.sin(sy * 0.47 * 9 + 0.6)), (x, sy * 0.53, 0.235)], 0.008, GOLD_C, cp)
+                tube(f"car_carpet_tassel{sx}{sy}{k}", [(x, sy * 0.47, 0.25 + 0.025 * math.sin(sy * 0.47 * 9 + 0.6)), (x, sy * 0.53, 0.235)], 0.008, ACC_GOLD, cp)
     ride("carpet", 1.0, (0, 0.06, 0.3), 0.7, CARPET)
 
     counts = {}

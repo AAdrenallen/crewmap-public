@@ -2,9 +2,10 @@ import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { carColorOf, colorOf, DEFAULT_CAR, finishOf, type AvatarConfig, type CarConfig, type FinishId, type FinishItem } from '@crewmap/shared/avatar';
+import { DEFAULT_CAR, type AvatarConfig, type CarConfig, type FinishId } from '@crewmap/shared/avatar';
 import manifest from '../../assets/models/manifest.json';
 import { applyFinish, stillClock, type FinishClock } from './finishes';
+import { avatarFinishes, avatarLook, carFinish, carLook, type LookOf } from './looks';
 
 /** GLB kits produced by tools/blender/build_assets.py (+ tools/blender/optimize.mjs: quantized, no decoder needed). */
 const AVATAR_GLB = require('../../assets/models/avatar.glb');
@@ -128,29 +129,32 @@ const METAL_TINT = 1.15;
  * used it) and apply the config colours. No clear-coat/sheen/environment map: the bake needs no PMREM pass, and the
  * composite outline + toon bands give the finished cartoon look.
  */
-function toonify(root: THREE.Object3D, colours: Record<string, string>, finishes: Record<string, FinishId> = {}, clock: FinishClock = stillClock()): void {
+function toonify(root: THREE.Object3D, lookOf: LookOf, finishOf: (material: string) => FinishId | undefined = () => undefined, clock: FinishClock = stillClock()): void {
   const made = new Map<THREE.Material, THREE.MeshToonMaterial>();
   const convert = (m: THREE.Material): THREE.MeshToonMaterial => {
     let t = made.get(m);
     if (t) return t;
     const src = m as THREE.MeshStandardMaterial;
-    const hex = colours[m.name];
-    const color = hex ? new THREE.Color(hex) : src.color.clone();
-    if (!hex && src.metalness > 0.5) color.multiplyScalar(METAL_TINT);
-    const glass = m.name === 'glass';
+    const look = lookOf(m.name);
+    const color = src.color.clone();
+    if (look?.color) color.lerp(new THREE.Color(look.color), look.tint ?? 1);
+    else if (src.metalness > 0.5) color.multiplyScalar(METAL_TINT);
+    // see-through cabins (the rider shows in every car) and clear lenses
+    const opacity = m.name === 'glass' ? 0.38 : (look?.opacity ?? 1);
+    const glows = src.emissiveIntensity > 0 && src.emissive.getHex() !== 0;
+    const emissive = look?.glow === false ? new THREE.Color(0) : look?.color && glows ? color.clone() : src.emissive;
     t = new THREE.MeshToonMaterial({
       name: m.name,
       color,
       gradientMap: toonRamp(),
-      emissive: src.emissive,
+      emissive,
       emissiveIntensity: src.emissiveIntensity,
       side: src.side,
-      // see-through cabins: the rider shows in every car
-      transparent: glass,
-      opacity: glass ? 0.38 : 1,
-      depthWrite: !glass,
+      transparent: opacity < 1,
+      opacity,
+      depthWrite: opacity >= 1,
     });
-    const finish = finishes[m.name];
+    const finish = finishOf(m.name);
     if (finish) applyFinish(t, finish, clock);
     made.set(m, t);
     return t;
@@ -171,33 +175,13 @@ export interface AvatarRig {
   armR: THREE.Object3D | null;
 }
 
-/** A configured avatar instance (own materials, only the chosen variants visible). */
-/** Material names painted by each finish item. */
-const FINISH_MATERIALS: Record<FinishItem, readonly string[]> = {
-  hair: ['hair'],
-  top: ['top'],
-  bottom: ['bottom'],
-  shoes: ['shoes', 'shoe', 'shoe2'],
-  hat: ['hat'],
-  accessory: ['extra', 'cape'],
-};
-
-function avatarFinishes(cfg: AvatarConfig): Record<string, FinishId> {
-  const out: Record<string, FinishId> = {};
-  for (const item of Object.keys(FINISH_MATERIALS) as FinishItem[]) {
-    const f = finishOf(cfg, item);
-    if (f !== 'none') for (const name of FINISH_MATERIALS[item]) out[name] = f;
-  }
-  return out;
-}
-
 /** `clock` drives animated finishes (the live stage advances it; bakes keep the still frame). */
 export async function buildAvatar(cfg: AvatarConfig, clock?: FinishClock): Promise<AvatarRig> {
   const kit = await loadGlb(AVATAR_GLB);
   ensureNormals(kit);
   const root = pickVariants(kit, cfg) ?? new THREE.Group();
-  const accent = cfg.topColor === '#FF6B6B' ? '#5B6CFF' : '#FF6B6B';
-  toonify(root, { skin: colorOf(cfg, 'skin'), hair: colorOf(cfg, 'hairColor'), top: colorOf(cfg, 'topColor'), bottom: colorOf(cfg, 'bottomColor'), shoe: colorOf(cfg, 'shoeColor'), shoe2: colorOf(cfg, 'shoeColor2'), hat: colorOf(cfg, 'hatColor'), frame: colorOf(cfg, 'glassesColor'), extra: colorOf(cfg, 'extraColor'), accent }, avatarFinishes(cfg), clock);
+  const finishes = avatarFinishes(cfg);
+  toonify(root, avatarLook(cfg), (name) => finishes[name], clock);
   const find = (n: string) => root.getObjectByName(n) ?? null;
   return { root, legL: find('legL'), legR: find('legR'), armL: find('armL'), armR: find('armR') };
 }
@@ -231,7 +215,7 @@ async function buildVehicle(cfg: CarConfig, scale: number, clock?: FinishClock):
   if (!node) throw new Error(`unknown ride ${cfg.model}`);
   const car = node.clone(true);
   car.position.set(0, 0, 0);
-  toonify(car, { paint: carColorOf(cfg), ...(cfg.accent ? { accent: cfg.accent } : {}) }, cfg.finish ? { paint: cfg.finish } : {}, clock);
+  toonify(car, carLook(cfg), (name) => carFinish(cfg, name), clock);
   car.scale.setScalar(scale);
   return car;
 }
@@ -240,6 +224,12 @@ async function buildVehicle(cfg: CarConfig, scale: number, clock?: FinishClock):
  * The avatar riding their vehicle: vehicle at its ride scale, the rider's hip on the seat, posed (seated with hands
  * on the wheel, astride and leaning on the motorcycle/rocket, standing sideways on the skateboard, ...).
  */
+/** The vehicle alone, same scale as in `buildRide` (the parked car marker, D67). */
+export async function buildParked(car: CarConfig): Promise<THREE.Object3D> {
+  const known = RIDES[car.model] ? car : { ...car, model: DEFAULT_CAR.model };
+  return buildVehicle(known, rideOf(known).scale);
+}
+
 export async function buildRide(avatar: AvatarConfig, car: CarConfig, clock?: FinishClock): Promise<THREE.Object3D> {
   const known = RIDES[car.model] ? car : { ...car, model: DEFAULT_CAR.model };
   const ride = rideOf(known);

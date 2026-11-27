@@ -32,11 +32,12 @@ export function FriendActions({ friend, onClose, onLocate, order }: { friend: Fr
   // Ask location = "where do you want me?"; asking to share once is offered when their policy shows me no exact position (D47).
   const askWhere = engine.asks.availability(id, 'where');
   const askOnce = engine.asks.availability(id, 'once');
-  items.push({ key: 'ask', icon: 'locate', label: askWhere === 'old' ? t('ask.needsUpdate') : t('fa.askLocation'), onPress: go(() => void engine.asks.ask(id, 'where')) });
+  const visible = !!pr && !friend.paused;
+  if (!visible) items.push({ key: 'ask', icon: 'locate', label: askWhere === 'old' ? t('ask.needsUpdate') : t('fa.askLocation'), onPress: go(() => void engine.asks.ask(id, 'where')) });
   if (!pr || pr.prec !== 'p' || friend.paused)
     items.push({ key: 'askOnce', icon: 'clock', label: askOnce === 'old' ? t('ask.needsUpdate') : t('ask.askOnce'), onPress: go(() => void engine.asks.ask(id, 'once')) });
   // Directions live in the locate pill (one path for finding someone).
-  items.unshift({ key: 'locate', icon: 'locate', label: t('friend.locate'), onPress: go(() => onLocate(id)) });
+  if (visible) items.unshift({ key: 'locate', icon: 'locate', label: t('friend.locate'), onPress: go(() => onLocate(id)) });
   if (pr) {
     items.push({
       key: 'along',

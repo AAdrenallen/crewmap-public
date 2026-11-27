@@ -1,9 +1,9 @@
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as THREE from 'three';
-import { avatarKey, rideKey, SPRITE_HEADINGS, type AvatarConfig, type CarConfig } from '@crewmap/shared/avatar';
+import { avatarKey, normalizeCar, rideKey, SPRITE_HEADINGS, type AvatarConfig, type CarConfig } from '@crewmap/shared/avatar';
 import { BakeBreaker, sheetFits } from './bakeGuard';
-import { buildAvatar, buildRide, pose } from './kit';
+import { buildAvatar, buildParked, buildRide, pose } from './kit';
 
 /**
  * On-device sprite baking (spike b decision): compose the avatar (or the avatar riding their vehicle) from the GLB
@@ -376,6 +376,19 @@ export async function avatarPortrait(cfg: AvatarConfig): Promise<string> {
 /** Half-height of the ride sheet view; Sprites scales ride cells by RIDE_HALF / AVATAR_VIEW.half to keep world scale. */
 export const RIDE_HALF = 0.95;
 export const AVATAR_HALF = AVATAR_VIEW.half;
+
+export function parkedSheetFile(car: CarConfig): File {
+  return new File(dir, `k-${SPRITE_VERSION}-${hash(JSON.stringify(normalizeCar(car)))}.png`);
+}
+
+/** The empty vehicle, 16 headings, framed like the ride sheet (the parked car marker, D67). */
+export async function parkedSheet(car: CarConfig): Promise<string> {
+  const out = parkedSheetFile(car);
+  if (out.exists) return out.uri;
+  return enqueue(async () =>
+    out.exists ? out.uri : bake({ cols: SPRITE_HEADINGS, rows: 1, half: RIDE_HALF, target: 0.3, shadow: 0.5 }, () => undefined, () => buildParked(car), out),
+  );
+}
 
 /** The avatar riding their vehicle, 16 headings (shown while driving). */
 export async function rideSheet(avatar: AvatarConfig, car: CarConfig): Promise<string> {

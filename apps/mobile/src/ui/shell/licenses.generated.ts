@@ -41,6 +41,31 @@ export const LICENSE_ROWS: { asset: string; source: string; licence: string }[] 
     "licence": "CC-BY 4.0 — attribution \"Gouvernement du Québec (MTMD)\" shown on hazards"
   },
   {
+    "asset": "Fixed speed / red-light cameras",
+    "source": "OpenStreetMap via Overpass API (runtime, cached on device)",
+    "licence": "ODbL 1.0 — \"© OpenStreetMap contributors, ODbL\" shown on hazards"
+  },
+  {
+    "asset": "Fuel prices (regular / super / diesel, every Québec station)",
+    "source": "Régie de l’énergie du Québec, Régie essence Québec public file regieessencequebec.ca/stations.geojson.gz (runtime, cached on device)",
+    "licence": "Official data published for download; no licence text published (see docs/DECISIONS.md D64) — \"Régie de l’énergie du Québec\" shown on each station"
+  },
+  {
+    "asset": "Traffic cameras (location + link to the Québec 511 viewer)",
+    "source": "Données Québec / MTMD ms:infos_cameras (runtime)",
+    "licence": "CC-BY 4.0 — \"Gouvernement du Québec (MTMD)\" shown on each camera; images are not copied"
+  },
+  {
+    "asset": "Fuel stations and EV chargers",
+    "source": "OpenStreetMap via Overpass API (runtime, cached on device)",
+    "licence": "ODbL 1.0 — \"© OpenStreetMap contributors, ODbL\" shown on each point"
+  },
+  {
+    "asset": "EV chargers (optional, only with a key)",
+    "source": "Open Charge Map API (runtime)",
+    "licence": "Open-licence records only (CC BY 4.0 and other open licences); provider and licence shown per record"
+  },
+  {
     "asset": "Waze alerts",
     "source": "waze.com Live Map (runtime, not bundled)",
     "licence": "Shown with \"Waze\" attribution; see docs/RESEARCH.md"

@@ -344,13 +344,13 @@ export function Badge({ label, tone = 'accent' }: { label: string; tone?: 'accen
 }
 
 /** Segmented control. Few options → equal-width track; many → wrapping chips. testIDs `seg-<key>`. */
-export function Segmented<T extends string>({ options, value, onChange }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+export function Segmented<T extends string>({ options, value, onChange, testIDPrefix = 'seg-' }: { options: { key: T; label: string }[]; value: T; onChange: (v: T) => void; testIDPrefix?: string }) {
   const th = useTheme();
   if (options.length > 4) {
     return (
       <View style={{ flexDirection: 'row', gap: space(2), flexWrap: 'wrap' }}>
         {options.map((o) => (
-          <Chip key={o.key} label={o.label} active={o.key === value} onPress={() => onChange(o.key)} testID={`seg-${o.key}`} />
+          <Chip key={o.key} label={o.label} active={o.key === value} onPress={() => onChange(o.key)} testID={`${testIDPrefix}${o.key}`} />
         ))}
       </View>
     );
@@ -362,7 +362,7 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
         return (
           <Pressable
             key={o.key}
-            testID={`seg-${o.key}`}
+            testID={`${testIDPrefix}${o.key}`}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
             accessibilityLabel={o.label}

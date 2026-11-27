@@ -264,14 +264,16 @@ export class LruBlobStore implements BlobStore {
     private readonly kv: Kv,
     private readonly now: () => number = Date.now,
     private readonly capBytes: number = QUIP_LIMITS.storeCapBytes,
+    /** kv key of the LRU index: one per store (quips, memory photos). */
+    private readonly indexKey: string = 'quips.blobs',
   ) {}
 
   private async idx(): Promise<BlobIndex> {
-    return (this.index ??= BlobIndex.from(await this.kv.get<Record<string, BlobEntry> | null>('quips.blobs', null)));
+    return (this.index ??= BlobIndex.from(await this.kv.get<Record<string, BlobEntry> | null>(this.indexKey, null)));
   }
 
   private async persist(): Promise<void> {
-    await this.kv.set('quips.blobs', (await this.idx()).toJSON());
+    await this.kv.set(this.indexKey, (await this.idx()).toJSON());
   }
 
   async has(h: string): Promise<boolean> {

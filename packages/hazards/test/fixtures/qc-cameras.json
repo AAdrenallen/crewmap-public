@@ -1,0 +1,103 @@
+{
+ "type": "FeatureCollection",
+ "numberMatched": 34,
+ "name": "infos_cameras",
+ "bbox": [
+  -73.64729,
+  45.45397,
+  -73.50434,
+  45.54568
+ ],
+ "features": [
+  {
+   "type": "Feature",
+   "id": 3377,
+   "properties": {
+    "IDEcamera": "3377",
+    "NumeroCamera": "M1120036",
+    "DescriptionLocalisationFr": "Route 112 (direction ouest) à la hauteur du pont Victoria (côté Montréal)",
+    "DescriptionLocalisationEn": "Route 112 (westward) at pont Victoria (Montréal side)",
+    "DateDebutDiffusion": "2011/10/31",
+    "NumeroRoute": "00112",
+    "NomRegionDiffusion": "Montréal",
+    "OrdreAffichage": "1",
+    "NomPosteFrontalier": "",
+    "NomPontFrontalier": "Pont Victoria",
+    "URL_FLUX_DONNEE": "https://www.quebec511.info/Carte/Fenetres/FenetreVideo.html?id=3377"
+   },
+   "bbox": [
+    -73.5415,
+    45.4874,
+    -73.5415,
+    45.4874
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.5415,
+     45.4874
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 3830,
+   "properties": {
+    "IDEcamera": "3830",
+    "NumeroCamera": "M1360006",
+    "DescriptionLocalisationFr": "Route 136 (direction ouest) à la hauteur de l'échangeur Turcot",
+    "DescriptionLocalisationEn": "Route 136 (westward) at échangeur Turcot",
+    "DateDebutDiffusion": "2019/02/07",
+    "NumeroRoute": "00136",
+    "NomRegionDiffusion": "Montréal",
+    "OrdreAffichage": "1",
+    "NomPosteFrontalier": "",
+    "NomPontFrontalier": "",
+    "URL_FLUX_DONNEE": "https://www.quebec511.info/Carte/Fenetres/FenetreVideo.html?id=3830"
+   },
+   "bbox": [
+    -73.60255,
+    45.46628,
+    -73.60255,
+    45.46628
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.60255,
+     45.46628
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "id": 3378,
+   "properties": {
+    "IDEcamera": "3378",
+    "NumeroCamera": "M1120038",
+    "DescriptionLocalisationFr": "Route 112 (direction est) à la hauteur du pont Victoria (côté Montréal)",
+    "DescriptionLocalisationEn": "Route 112 (eastward) at pont Victoria (Montréal side)",
+    "DateDebutDiffusion": "2011/10/31",
+    "NumeroRoute": "00112",
+    "NomRegionDiffusion": "Montréal",
+    "OrdreAffichage": "2",
+    "NomPosteFrontalier": "",
+    "NomPontFrontalier": "Pont Victoria",
+    "URL_FLUX_DONNEE": "https://www.quebec511.info/Carte/Fenetres/FenetreVideo.html?id=3378"
+   },
+   "bbox": [
+    -73.5415,
+    45.4874,
+    -73.5415,
+    45.4874
+   ],
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -73.5415,
+     45.4874
+    ]
+   }
+  }
+ ]
+}

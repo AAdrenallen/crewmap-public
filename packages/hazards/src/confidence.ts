@@ -7,7 +7,7 @@ import type { Hazard, HazardSourceId, HazardType } from './types';
  */
 export const CONFIDENCE = {
   /** Base probability per source. Waze uses its own 0–10 reliability; friends their vote-adjusted one. */
-  prior: { quebec: 0.95, montreal: 0.95, mapbox: 0.85, waze: 0.8, 'waze-paid': 0.8, friends: 0.8, anon: 0.4 } as Record<HazardSourceId, number>,
+  prior: { quebec: 0.95, montreal: 0.95, osm: 0.85, mapbox: 0.85, waze: 0.8, 'waze-paid': 0.8, friends: 0.8, anon: 0.4 } as Record<HazardSourceId, number>,
   /** Full confidence for this long after the freshest report, then halves every `halfLifeMs` (per type family). */
   freshMs: { enforcement: 15 * 60_000, accident: 30 * 60_000, hazard: 30 * 60_000, jam: 10 * 60_000 } as Record<string, number>,
   halfLifeMs: { enforcement: 30 * 60_000, accident: 60 * 60_000, hazard: 60 * 60_000, jam: 15 * 60_000 } as Record<string, number>,

@@ -9,7 +9,7 @@
  * - Presence carries `pv` (protocol version) and `cp` (capability bitmask). Absent means a pre-capability build
  *   (protocol 1) that supports the baseline kinds only.
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 10;
 
 export const CAPS = {
   /** 'presence-precise' + 'sender-key' (per-friend precision). */
@@ -38,6 +38,10 @@ export const CAPS = {
   quips: 2048,
   /** Per-friend sharing overrides ('tier-key' + 'presence-tier'; protocol 8, D52). Older builds see the crew broadcast only. */
   userShare: 4096,
+  /** Leaderboard aggregates ('stats-agg'; protocol 9, D56): counts and totals per period, no places. */
+  statsAgg: 8192,
+  /** Trip memories ('memory', 'memory-photo', 'memory-blob', 'memory-react'; protocol 10, D68). Older builds ignore them. */
+  memories: 16384,
 } as const;
 
 export type Capability = keyof typeof CAPS;
@@ -45,7 +49,7 @@ export type Capability = keyof typeof CAPS;
 /** What a protocol-1 build (no `pv` / `cp` on the wire) is known to do. */
 export const BASELINE_CAPS: Capability[] = ['precisePresence', 'hazards', 'arrivals'];
 
-export const LOCAL_CAPS: Capability[] = ['precisePresence', 'chat', 'hazards', 'arrivals', 'sharingPolicy', 'driveAlong', 'locate', 'etaShare', 'viewerDemand', 'groupDrive', 'askWhere', 'quips', 'userShare'];
+export const LOCAL_CAPS: Capability[] = ['precisePresence', 'chat', 'hazards', 'arrivals', 'sharingPolicy', 'driveAlong', 'locate', 'etaShare', 'viewerDemand', 'groupDrive', 'askWhere', 'quips', 'userShare', 'statsAgg', 'memories'];
 
 export function capMask(caps: Capability[]): number {
   return caps.reduce((m, c) => m | CAPS[c], 0);

@@ -90,7 +90,7 @@ describe('route candidates — tunables', () => {
     expect(CANDIDATES.distinctOverlap).toBe(0.75);
     expect(CANDIDATES.intersectionClearM).toBe(300);
     expect(CANDIDATES.learned).toMatchObject({ simplifyM: 30, endpointM: 1500, endpointFrac: 0.05, clusterOverlap: 0.8, halfLifeDays: 60, minTrips: 2 });
-    expect(DISCOVERY.callBudget).toBeLessThanOrEqual(8);
+    expect(DISCOVERY.callBudget).toBeLessThanOrEqual(10);
   });
 });
 
@@ -147,8 +147,8 @@ describe('route candidates — selection and labels', () => {
   it('names each route by its distinguishing road, refs first, letters as fallback', () => {
     const found: FoundRoute[] = [A(), B(), C()].map((r) => ({ route: r, source: 'base' }));
     const labels = labelCandidates(found).map((c) => c.label);
-    expect(labels[0]).toEqual({ kind: 'road', road: '15' });
-    expect(labels[1]).toEqual({ kind: 'road', road: '148' });
+    expect(labels[0]).toEqual({ kind: 'road', road: 'A-15' });
+    expect(labels[1]).toEqual({ kind: 'road', road: 'R-148' });
     expect(labels[2]).toEqual({ kind: 'road', road: '25e Avenue' });
     const twins = labelCandidates([{ route: A(), source: 'base' }, { route: A(), source: 'base' }]).map((c) => c.label);
     expect(twins).toEqual([{ kind: 'letter', letter: 'A' }, { kind: 'letter', letter: 'B' }]);

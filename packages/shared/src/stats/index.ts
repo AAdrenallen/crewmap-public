@@ -2,3 +2,4 @@
 export * from './core';
 export * from './series';
 export * from './board';
+export * from './aggregate';

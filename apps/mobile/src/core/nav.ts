@@ -1,6 +1,7 @@
 import { platform } from '@crewmap/platform';
-import { HazardAnnouncer, hazardsOnRoute, type FriendReportType, type HazardOnRoute } from '@crewmap/hazards';
-import { DEFAULT_ROUTE_OPTIONS, excludeList, normalizeRouteOptions, type RouteOptions, RouteProgress, inQuebec, namesFromStep, segmentUtterance, singleVoice, type SpeechLang, discoverRoutes, learnedRoutes, nextViaCache, odKey, previewRecord, type DriveSample, type NavRoute, type RouteCandidate, type Via, currentRouteQuery, decideFaster, dismiss, emptyMemory, isBusy, jamAhead, matchCurrent, remainingLine, remainingS, shouldCheck, type LearnedRoute, type ReevalClock, type ReevalMemory, type ReevalTrigger } from '@crewmap/shared/navigation';
+import { HazardAnnouncer, hazardsOnRoute, isRoadConditionHazard, routeHazardCostS, type FriendReportType, type HazardOnRoute } from '@crewmap/hazards';
+import { DEFAULT_ROUTE_OPTIONS, excludeList, normalizeRouteOptions, type RouteOptions, RouteProgress, inQuebec, namesFromStep, segmentUtterance, singleVoice, type SpeechLang, discoverRoutes, learnedRoutes, nextViaCache, odKey, previewRecord, recommend, type DriveSample, type NavRoute, type RouteCandidate, type Via, currentRouteQuery, decideFaster, dismiss, emptyMemory, isBusy, jamAhead, matchCurrent, remainingLine, remainingS, shouldCheck, type LearnedRoute, type ReevalClock, type ReevalMemory, type ReevalTrigger, DISCOVERY, ROUTE_CACHE, discoveryMode, periodOf, routeCacheKey, timeBucket, type TimedTrace } from '@crewmap/shared/navigation';
+import { TtlCache } from '@crewmap/shared/ttlCache';
 import { formatDistance } from '@crewmap/shared/units';
 import { tIn, withLang, type Lang } from '@crewmap/shared/i18n';
 import * as db from './db';
@@ -8,6 +9,12 @@ import { directions, directionsQuery, snapToRoads } from './mapbox';
 import { ownReports } from './hazards';
 import { useApp } from './store';
 import { DRIVE_SAMPLES_KEY, LAST_PREVIEW_KEY, type Tracking } from './tracking';
+import { budgetLevel, countSaved } from './apiBudget';
+import { crewBiases } from './etaTruth';
+import { roadWeather } from './roadWeather';
+
+/** Route searches of the last few minutes (preview re-opened, options toggled back): no new Directions calls. */
+const routeResults = new TtlCache<{ candidates: RouteCandidate[]; calls: number }>(ROUTE_CACHE.ttlMs, ROUTE_CACHE.maxEntries);
 
 /** Language of the navigation voice and of Mapbox instructions; falls back to English when its system voice is missing. */
 export function voiceLang(): Lang {
@@ -74,6 +81,11 @@ export function sayFaster(savesS: number): void {
   say(tIn(voiceLang(), 'nav.faster', { min: Math.max(1, Math.round(savesS / 60)) }), 'guidance');
 }
 
+/** Ranking cost of the hazards currently known on a route (crashes, works, closures; direction-aware). */
+function hazardCost(route: NavRoute): number {
+  return routeHazardCostS(route, useApp.getState().hazards);
+}
+
 /**
  * Turn-by-turn session (F4a, F11): route preview with alternatives, guidance from our own RouteProgress, spoken
  * instructions (incl. "then…" for close turns), automatic reroute with backoff, hazard warnings ahead on the route.
@@ -89,6 +101,7 @@ export class Navigator {
   private checking = false;
   private learned: LearnedRoute[] = [];
   private samples: DriveSample[] = [];
+  private traces: TimedTrace[] = [];
   /** Accident / closure / jam hazards already seen on the corridor ahead (a new one triggers a check). */
   private corridorIds = new Set<string>();
   readonly confirmListeners = new Set<(hazardId: string | null) => void>();
@@ -108,20 +121,40 @@ export class Navigator {
     if (!fix) throw new Error('no location');
     const now = Date.now();
     const exclude = excludeList(await loadRouteOptions());
+    const lang = voiceLang();
     // Vias and learned routes were found without restrictions; with an exclusion they could cross the avoided roads.
     const cacheKey = `routeVias:${odKey(fix, dest)}${exclude.length ? `:${exclude.join('+')}` : ''}`;
     const [traces, cachedVias, samples] = await Promise.all([db.routeTraces(), db.kvGet<Via[]>(cacheKey, []), db.kvGet<DriveSample[]>(DRIVE_SAMPLES_KEY, [])]);
-    const res = await discoverRoutes(
-      { from: fix, to: dest, heading: fix.heading, learned: exclude.length ? [] : learnedRoutes(traces, fix, dest, now), cachedVias, samples, now, exclude },
-      (q) => directionsQuery(q, voiceLang()),
-      snapToRoads,
-    );
-    const first = res.candidates[0];
+    const crew = crewBiases();
+    const learned = exclude.length ? [] : learnedRoutes(traces, fix, dest, now);
+    // Same O/D, options and language a few minutes ago: same routes, re-ranked with the current hazards (0 calls).
+    const resultKey = routeCacheKey(fix, dest, exclude, lang);
+    const cached = routeResults.get(resultKey, now);
+    let candidates: RouteCandidate[];
+    if (cached) {
+      countSaved('directions', cached.calls);
+      candidates = recommend(cached.candidates, { learned, samples, now, traces, crew, hazardCostS: hazardCost });
+    } else {
+      // A full discovery per O/D and period (peak / other) once a week; then the kept corridors are re-asked (D60).
+      const fullKey = `routeFull:${odKey(fix, dest)}:${periodOf(timeBucket(now))}${exclude.length ? `:${exclude.join('+')}` : ''}`;
+      const mode = discoveryMode({ from: fix, to: dest, lastFullAt: await db.kvGet<number | null>(fullKey, null), now, budget: budgetLevel('directions') });
+      const res = await discoverRoutes(
+        { from: fix, to: dest, heading: fix.heading, learned, cachedVias, samples, now, exclude, hazardCostS: hazardCost, traces, crew, mode },
+        (q) => directionsQuery(q, lang),
+        snapToRoads,
+      );
+      candidates = res.candidates;
+      if (candidates.length === 0) throw new Error('no route');
+      countSaved('directions', DISCOVERY.callBudget - res.calls);
+      routeResults.set(resultKey, { candidates, calls: res.calls }, now);
+      if (mode === 'full') void db.kvSet(fullKey, now);
+      if (mode !== 'lean') void db.kvSet(cacheKey, nextViaCache(cachedVias, res.triedVias, res.keptVias, res.plausibleVias));
+    }
+    const first = candidates[0];
     if (!first) throw new Error('no route');
-    void db.kvSet(cacheKey, nextViaCache(cachedVias, res.triedVias, res.keptVias, res.plausibleVias));
-    void db.kvSet(LAST_PREVIEW_KEY, previewRecord(res.candidates, fix, dest, now));
-    useApp.getState().set({ nav: { route: first.route, candidates: res.candidates, destination: dest, progress: null, active: false, rerouting: false } });
-    return res.candidates;
+    void db.kvSet(LAST_PREVIEW_KEY, previewRecord(candidates, fix, dest, now));
+    useApp.getState().set({ nav: { route: first.route, candidates, destination: dest, progress: null, active: false, rerouting: false } });
+    return candidates;
   }
 
   choose(route: NavRoute): void {
@@ -134,6 +167,7 @@ export class Navigator {
     if (!nav) return;
     this.progress = new RouteProgress(nav.route);
     this.announcer = new HazardAnnouncer();
+    roadWeather.reset();
     this.reeval = { startedAt: Date.now(), lastCheckAt: null, checks: 0, busy: isBusy(jamAhead(nav.route, 0)) };
     this.reevalMem = emptyMemory();
     this.corridorIds = new Set();
@@ -141,6 +175,7 @@ export class Navigator {
     void Promise.all([db.routeTraces(), db.kvGet<DriveSample[]>(DRIVE_SAMPLES_KEY, [])]).then(([traces, samples]) => {
       const fix = useApp.getState().fix;
       this.samples = samples;
+      this.traces = traces;
       this.learned = fix && excludeList(getRouteOptions()).length === 0 ? learnedRoutes(traces, fix, dest, Date.now()) : [];
     });
     this.refreshHazards();
@@ -203,6 +238,13 @@ export class Navigator {
     const now = Date.now();
     const route = nav.route;
     if (!shouldCheck(this.reeval, now, trigger, { s: remainingS(route, p.alongM), m: route.distanceM - p.alongM })) return;
+    // Daily budget (D60): past the soft cap only incidents / jams ahead trigger a check, past the hard cap none.
+    const level = budgetLevel('directions');
+    if (level === 'off' || (level === 'lean' && trigger === 'timer')) {
+      countSaved('directions');
+      this.reeval = { ...this.reeval, lastCheckAt: now };
+      return;
+    }
     this.checking = true;
     this.reeval = { ...this.reeval, lastCheckAt: now, checks: this.reeval.checks + 1 };
     try {
@@ -217,7 +259,7 @@ export class Navigator {
       if (!current || useApp.getState().nav?.route !== route) return;
       this.reeval = { ...this.reeval, busy: isBusy(jamAhead(current, 0)) };
       const alts = fresh.filter((r) => r !== current);
-      const { offer, memory } = decideFaster(current, alts, { learned: this.learned, samples: this.samples, now: Date.now() }, this.reevalMem);
+      const { offer, memory } = decideFaster(current, alts, { learned: this.learned, samples: this.samples, now: Date.now(), hazardCostS: hazardCost, traces: this.traces, crew: crewBiases() }, this.reevalMem);
       this.reevalMem = memory;
       if (!offer) return;
       if (useApp.getState().settings.autoSwitchFaster) this.switchTo(offer.route);
@@ -254,7 +296,8 @@ export class Navigator {
   private refreshHazards(): void {
     const nav = useApp.getState().nav;
     if (!nav) return;
-    this.onRoute = useApp.getState().settings.hazardAlerts ? hazardsOnRoute(nav.route, useApp.getState().hazards) : [];
+    // Winter road conditions are spoken once per stretch by the road-weather warning instead (D70).
+    this.onRoute = useApp.getState().settings.hazardAlerts ? hazardsOnRoute(nav.route, useApp.getState().hazards).filter((h) => !isRoadConditionHazard(h.hazard)) : [];
   }
 
   private async onFix(): Promise<void> {
@@ -279,6 +322,14 @@ export class Navigator {
         say(tIn(vl, 'nav.stillThere'), 'alert');
       }
     }
+    const rw = s.settings.hazardAlerts ? roadWeather.update(nav.route, s.hazards, p.alongM, Date.now()) : null;
+    if (rw) {
+      const type = tIn(vl, `rw.${rw.zone.category}`);
+      say(rw.distanceM > 0 ? tIn(vl, 'hz.ahead', { type, dist: formatDistance(rw.distanceM, vl) }) : tIn(vl, 'rw.here', { type }), 'alert');
+      platform.haptics.play('warning');
+    }
+    const bw = s.settings.hazardAlerts ? roadWeather.border(nav.route, p.alongM, Date.now()) : null;
+    if (bw) say(tIn(vl, bw.minutes > 0 ? 'border.wait' : 'border.none', { name: bw.office, min: bw.minutes }), 'alert', [bw.office]);
     if (p.arrived) {
       say(tIn(vl, 'nav.arrived'), 'guidance');
       setTimeout(() => this.end(), 8000);
@@ -289,8 +340,14 @@ export class Navigator {
       useApp.getState().set({ nav: { ...useApp.getState().nav!, rerouting: true } });
       try {
         const routes = await directions(fix, nav.destination, fix.heading, voiceLang(), excludeList(getRouteOptions()));
-        if (routes[0]) {
-          this.switchTo(routes[0]);
+        // Same ranking as the preview and the re-evaluation (no extra calls): not just Directions' first answer.
+        const label = { kind: 'letter', letter: '' } as const;
+        const best = recommend(
+          routes.map((route) => ({ route, source: 'base' as const, label })),
+          { learned: this.learned, samples: this.samples, now: Date.now(), hazardCostS: hazardCost, traces: this.traces, crew: crewBiases() },
+        )[0];
+        if (best) {
+          this.switchTo(best.route);
         }
       } catch {
         useApp.getState().set({ nav: { ...useApp.getState().nav!, rerouting: false } });

@@ -194,3 +194,17 @@ export class PresenceBook {
     return () => this.listeners.delete(cb);
   }
 }
+
+/** A battery change (>= BATTERY_STEP_PCT or charger plugged/unplugged) publishes early, at most this often. */
+export const BATTERY_PUBLISH_GAP_MS = 60_000;
+export const BATTERY_STEP_PCT = 2;
+
+export function batteryChanged(
+  prev: { level: number | null; charging: boolean } | null,
+  cur: { level: number | null; charging: boolean },
+): boolean {
+  if (!prev) return false;
+  if (prev.charging !== cur.charging) return true;
+  if (prev.level === null || cur.level === null) return prev.level !== cur.level;
+  return Math.abs(prev.level - cur.level) >= BATTERY_STEP_PCT;
+}

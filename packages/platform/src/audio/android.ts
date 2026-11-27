@@ -16,6 +16,8 @@ let recorder: AudioRecorder | null = null;
 let recordTimer: ReturnType<typeof setTimeout> | null = null;
 let recordResolve: ((v: { uri: string; durationMs: number; bytes: number }) => void) | null = null;
 let recordStartedAt = 0;
+let recordStarting = false;
+let stopWanted = false;
 
 /** Navigation voice ducks other apps (music/podcasts); emote clips mix in quietly underneath. */
 async function voiceMode(): Promise<void> {
@@ -87,21 +89,35 @@ export const androidAudio: AudioService = {
       }, 6500);
     });
   },
-  record: async (maxMs) => {
+  record: async (maxMs, onStart) => {
     if (recorder) await finishRecording();
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, interruptionMode: 'doNotMix' });
-    const preset = RecordingPresets.LOW_QUALITY;
-    const r = new AudioModule.AudioRecorder({ ...preset, ...preset.android, numberOfChannels: 1 }) as AudioRecorder;
-    await r.prepareToRecordAsync();
-    recorder = r;
-    recordStartedAt = Date.now();
-    r.record();
+    recordStarting = true;
+    stopWanted = false;
+    try {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, interruptionMode: 'doNotMix' });
+      const preset = RecordingPresets.LOW_QUALITY;
+      const r = new AudioModule.AudioRecorder({ ...preset, ...preset.android, numberOfChannels: 1 }) as AudioRecorder;
+      await r.prepareToRecordAsync();
+      // Released before the microphone was ready: nothing to record (the old code kept recording the full limit).
+      if (stopWanted) {
+        stopWanted = false;
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        return { uri: '', durationMs: 0, bytes: 0 };
+      }
+      recorder = r;
+      recordStartedAt = Date.now();
+      r.record();
+    } finally {
+      recordStarting = false;
+    }
+    onStart?.();
     return new Promise((resolve) => {
       recordResolve = resolve;
       recordTimer = setTimeout(() => void finishRecording(), maxMs);
     });
   },
   stopRecording: async () => {
+    if (recordStarting && !recorder) stopWanted = true;
     await finishRecording();
     await setAudioModeAsync({ allowsRecording: false });
   },

@@ -1,6 +1,9 @@
 import type { BBox } from '@crewmap/shared/geo';
 
-export type HazardSourceId = 'waze' | 'waze-paid' | 'quebec' | 'montreal' | 'mapbox' | 'friends' | 'anon';
+export type HazardSourceId = 'waze' | 'waze-paid' | 'quebec' | 'montreal' | 'osm' | 'mapbox' | 'friends' | 'anon';
+
+/** Any feed with a health tracker: hazard sources plus the map-point feeds (D64). */
+export type FeedSourceId = HazardSourceId | 'regie' | 'osm-poi' | 'mtmd-cam' | 'ocm' | 'eccc' | 'cbsa' | 'wiki';
 
 export type HazardType =
   | 'police'
@@ -50,7 +53,7 @@ export interface Hazard {
 export type HealthStatus = 'ok' | 'degraded' | 'blocked' | 'shapeChanged' | 'disabled' | 'capReached';
 
 export interface SourceHealth {
-  source: HazardSourceId;
+  source: FeedSourceId;
   status: HealthStatus;
   lastOkAt: number | null;
   lastAttemptAt: number | null;

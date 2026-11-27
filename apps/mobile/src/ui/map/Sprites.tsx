@@ -3,7 +3,7 @@ import { useActiveInterval } from '../useActiveInterval';
 import { Image, View } from 'react-native';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { DEFAULT_CAR, headingFrame, SPRITE_HEADINGS, type AvatarConfig, type CarConfig } from '@crewmap/shared/avatar';
-import { AVATAR_FRAMES, AVATAR_HALF, avatarPortrait, avatarSheet, RIDE_HALF, rideSheet } from '../../avatar3d/baker';
+import { AVATAR_FRAMES, AVATAR_HALF, avatarPortrait, avatarSheet, parkedSheet, RIDE_HALF, rideSheet } from '../../avatar3d/baker';
 import { rideFallback } from '../../avatar3d/bakeGuard';
 import { recordError } from '../../core/errorLog';
 import { Icon } from '../kitIcons';
@@ -243,6 +243,45 @@ function MapSpriteInner({
         <View style={{ width: size, height: size }} />
       )}
     </Animated.View>
+  );
+}
+
+/** The parked car (D67): the user's own vehicle without the rider, frozen at the heading it stopped with. */
+export function ParkedSprite({ car, heading, bearing, size = 48 }: { car: CarConfig; heading: number | null; bearing: number; size?: number }) {
+  return (
+    <SpriteBoundary size={size} fallback={<View style={{ width: size, height: size }} />}>
+      <ParkedSpriteInner car={car} heading={heading} bearing={bearing} size={size} />
+    </SpriteBoundary>
+  );
+}
+
+function ParkedSpriteInner({ car, heading, bearing, size }: { car: CarConfig; heading: number | null; bearing: number; size: number }) {
+  const ride = rideFallback(car, failedRides);
+  const { uri, failed } = useSheet(`k:${JSON.stringify(ride)}`, () => parkedSheet(ride));
+  if (failed)
+    return (
+      <View style={{ width: size * 0.7, height: size * 0.7, borderRadius: size, backgroundColor: 'rgba(14,18,32,0.82)', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name="car" size={Math.round(size * 0.4)} color="#FFFFFF" />
+      </View>
+    );
+  return uri ? <Cell uri={uri} col={headingFrame(heading, bearing)} row={0} rows={1} size={size * RIDE_SCALE} /> : <View style={{ width: size, height: size }} />;
+}
+
+/** One frozen cell of a person's existing walk sheet (group scenes): no animation, no extra bake. */
+export function PosedSprite({ avatar, frame, heading, size }: { avatar: AvatarConfig; frame: number; heading: number; size: number }) {
+  return (
+    <SpriteBoundary size={size}>
+      <PosedSpriteInner avatar={avatar} frame={frame} heading={heading} size={size} />
+    </SpriteBoundary>
+  );
+}
+
+function PosedSpriteInner({ avatar, frame, heading, size }: { avatar: AvatarConfig; frame: number; heading: number; size: number }) {
+  const uri = useAvatarSheet(avatar);
+  return uri ? (
+    <Cell uri={uri} col={heading % SPRITE_HEADINGS} row={Math.min(AVATAR_FRAMES - 1, frame)} rows={AVATAR_FRAMES} size={size} />
+  ) : (
+    <View style={{ width: size, height: size }} />
   );
 }
 

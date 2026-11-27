@@ -15,7 +15,7 @@ export const AVATAR_PARTS = {
   face: ['smile', 'grin', 'cool', 'wink', 'calm', 'surprised'],
   top: ['tee', 'hoodie', 'jacket', 'tank', 'sweater', 'jersey'],
   topColor: ['#5B6CFF', '#FF6B6B', '#FFC845', '#2EC4B6', '#1F2937', '#F5F5F5', '#8E44AD', '#27AE60'],
-  bottom: ['jeans', 'shorts', 'skirt', 'joggers', 'cargo', 'bootcut', 'skinny', 'baggy', 'leggings', 'overalls', 'pleated'],
+  bottom: ['jeans', 'shorts', 'skirt', 'joggers', 'cargo', 'bootcut', 'skinny', 'baggy', 'leggings', 'overalls', 'pleated', 'kilt', 'capri', 'flares', 'harem', 'chinos', 'bikeshorts', 'boardshorts', 'cutoffs', 'palazzo'],
   bottomColor: ['#2C3E70', '#1F2937', '#6B4F3A', '#9AA0A6', '#3D7A4C', '#B03A48'],
   shoes: ['sneakers', 'boots', 'sandals', 'hightops', 'loafers', 'clogs', 'slippers'],
   shoeColor: ['#F5F5F5', '#1F2937', '#E53935', '#1E88E5', '#8B5A2B', '#FDD835', '#43A047', '#8E44AD'],

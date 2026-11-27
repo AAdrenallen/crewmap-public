@@ -39,6 +39,8 @@ export interface CrewmapPlatformNative {
   mediaCurrent(): NativeNowPlaying | null;
   mediaControl(action: string): boolean;
   mediaOpenSplit(pkg: string | null): Promise<string>;
+  photoCompress(uri: string, maxEdge: number, maxBytes: number): Promise<{ uri: string; width: number; height: number; bytes: number } | null>;
+  photoShare(uri: string, mime: string, title: string): Promise<boolean>;
   addListener(event: 'onMedia', cb: (e: ({ none: true } & Partial<NativeNowPlaying>) | ({ none: false } & NativeNowPlaying)) => void): EventSubscription;
   addListener(event: 'onActivity', cb: (e: { activity: string; confidence: number; t: number }) => void): EventSubscription;
   addListener(event: 'onScreen', cb: (e: { kind: 'screenOn' | 'screenOff' | 'unlocked'; t: number }) => void): EventSubscription;

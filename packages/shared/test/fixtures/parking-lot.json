@@ -1,0 +1,62 @@
+{
+ "note": "Synthetic: parking area at a public landmark (Olympic Stadium, Montréal). Lot parking.",
+ "spot": {
+  "lat": 45.558,
+  "lng": -73.552
+ },
+ "osm": {
+  "version": 0.6,
+  "generator": "synthetic",
+  "elements": [
+   {
+    "type": "way",
+    "id": 7,
+    "tags": {
+     "amenity": "parking",
+     "parking": "surface",
+     "name": "Stationnement du Stade"
+    },
+    "geometry": [
+     {
+      "lat": 45.5576403,
+      "lon": -73.5527706
+     },
+     {
+      "lat": 45.5576403,
+      "lon": -73.5512294
+     },
+     {
+      "lat": 45.5583597,
+      "lon": -73.5512294
+     },
+     {
+      "lat": 45.5583597,
+      "lon": -73.5527706
+     },
+     {
+      "lat": 45.5576403,
+      "lon": -73.5527706
+     }
+    ]
+   },
+   {
+    "type": "way",
+    "id": 8,
+    "tags": {
+     "highway": "service",
+     "service": "parking_aisle"
+    },
+    "geometry": [
+     {
+      "lat": 45.558027,
+      "lon": -73.5527706
+     },
+     {
+      "lat": 45.558027,
+      "lon": -73.5512294
+     }
+    ]
+   }
+  ]
+ }
+}

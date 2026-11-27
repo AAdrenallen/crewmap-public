@@ -13,6 +13,7 @@ import { loadClipboard, pickupClipboardInvite } from '../core/clipboardInvite';
 import { engine } from '../core/engine';
 import { inviteErrorMessage, inviteStash } from '../core/inviteErrors';
 import { JoinCodeField } from '../ui/JoinCode';
+import { CheckInOptIn, useCheckInChoice } from '../ui/safety/CheckInOptIn';
 import { notificationsPermission, requestNotifications } from '../core/notify';
 import { PART_TABS, PartOptions, PartTabs, RidePicker } from '../ui/avatar/AvatarPickers';
 import { AvatarStage } from '../ui/avatar/AvatarStage';
@@ -279,8 +280,9 @@ export default function Onboarding() {
     setError(null);
     try {
       await saveProfile();
-      if (mode === 'create') await engine.crews.create(crewName.trim(), name.trim());
-      else await engine.crews.join(codeLink ?? extractInviteLink(link) ?? link.trim(), name.trim());
+      const checkIn = useCheckInChoice.getState().on;
+      if (mode === 'create') await engine.crews.create(crewName.trim(), name.trim(), { checkIn });
+      else await engine.crews.join(codeLink ?? extractInviteLink(link) ?? link.trim(), name.trim(), { checkIn });
       await engine.finishOnboarding();
       await inviteStash.clear();
       const hold = celebrateMs(reduceMotion);
@@ -515,6 +517,10 @@ export default function Onboarding() {
               );
               return isInviteLink(link) ? <>{joinCard}{or}{createCard}</> : <>{createCard}{or}{joinCard}</>;
             })()}
+            {/* Safety check-in (D66): applies to the crew created or joined here. */}
+            <Card style={{ paddingVertical: 0, overflow: 'hidden' }}>
+              <CheckInOptIn />
+            </Card>
             {error && (
               <Animated.View entering={FadeIn.duration(200)} style={[styles.error, { backgroundColor: `${th.danger}1A` }]}>
                 <Icon name="alert" size={18} color={th.danger} />

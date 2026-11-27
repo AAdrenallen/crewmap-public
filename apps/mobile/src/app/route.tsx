@@ -21,6 +21,7 @@ import { ExternalNavButtons } from '../ui/nav/ExternalNavButtons';
 import { RouteHazards } from '../ui/nav/RouteHazards';
 import { RouteOptionsPanel } from '../ui/nav/RouteOptionsPanel';
 import { ShareEta } from '../ui/nav/ShareEta';
+import { routeColor } from '../ui/map/routeColors';
 
 const TRAFFIC: Record<Congestion, string | null> = {
   unknown: null,
@@ -183,10 +184,23 @@ export default function RoutePreview() {
                         )}
                       </View>
                     </View>
-                    <Text style={[type.headline, { color: th.text }]} numberOfLines={1}>
-                      {label}
-                    </Text>
-                    <TrafficBar r={r} fallback={th.accent} />
+                    <View style={styles.labelRow}>
+                      <View testID={`route-alt-${i}-color`} style={[styles.chip, { backgroundColor: routeColor(i) }]} />
+                      <Text style={[type.headline, { color: th.text, flex: 1 }]} numberOfLines={1}>
+                        {label}
+                      </Text>
+                      {(c.deltaS ?? 0) >= 60 && <Text style={[type.small, font('bold'), { color: th.textSoft }]}>{t('nav.delta', { min: Math.round((c.deltaS ?? 0) / 60) })}</Text>}
+                    </View>
+                    {(c.tags?.length ?? 0) > 0 && (
+                      <View style={styles.tags}>
+                        {c.tags!.map((tg) => (
+                          <Text key={tg} testID={`route-alt-${i}-tag-${tg}`} style={[type.caption, font('bold'), styles.tag, { color: th.textSoft, borderColor: th.border }]}>
+                            {t(`nav.tag.${tg}`)}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                    <TrafficBar r={r} fallback={routeColor(i)} />
                   </Bouncy>
                 </Animated.View>
               );
@@ -248,5 +262,9 @@ const styles = StyleSheet.create({
   alt: { borderWidth: 1.5, borderRadius: radius.l - 4, padding: 14, gap: 8 },
   altTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   inc: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chip: { width: 12, height: 12, borderRadius: 6 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 },
   bar: { height: 6, borderRadius: 3 },
 });

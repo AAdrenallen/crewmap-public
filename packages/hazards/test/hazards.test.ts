@@ -74,6 +74,18 @@ describe('F4d Waze health check, kill switch, fallback', () => {
     expect(h.calls.some((u) => u.includes('waze.com'))).toBe(false);
   });
 
+  it('uses the Live Map first (D62); the kill switch sends it to the paid adapter', async () => {
+    const h = http({ 'waze.com': { status: 200, body: fx('waze-a15-city.json') }, openwebninja: { status: 200, body: { status: 'OK', data: { alerts: [{ alert_id: 'p1', type: 'POLICE', subtype: 'POLICE_VISIBLE', latitude: 45.6, longitude: -73.77, publish_datetime_utc: '2026-06-15T18:10:00Z', num_thumbs_up: 2, alert_reliability: 7 }] } } } });
+    const svc = new HazardService({ waze: new WazeLiveMapSource(h), paid: new WazePaidSource(h, 'key', 5, new MemoryLedger()), quebec: new QuebecSource(h) });
+    svc.setConfig({ wazeEnabled: true, paidEnabled: true, version: 1 }, NOW);
+    const live = await svc.fetchWaze({ bbox: BBOX, now: NOW, reason: 'driving' });
+    expect(live.length).toBeGreaterThan(0);
+    expect(live.every((x) => x.source === 'waze')).toBe(true);
+    svc.setConfig({ wazeEnabled: false, paidEnabled: true, version: 2 }, NOW);
+    const paid = await svc.fetchWaze({ bbox: BBOX, now: NOW + 5 * 60_000, reason: 'driving' });
+    expect(paid[0]!.source).toBe('waze-paid');
+  });
+
   it('detects a response shape change', async () => {
     const h = http({ 'waze.com': { status: 200, body: { alerts: [{ id: 1, kind: 'POLICE', lat: 1 }, { id: 2 }], jams: [] } } });
     const w = new WazeLiveMapSource(h);

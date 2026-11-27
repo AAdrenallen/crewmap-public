@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Ellipse, G, Path, Rect } from 'react-native-svg';
-import type { EmotePreset } from '@crewmap/shared/emotes';
+import { PRESET_FALLBACK, type EmotePreset } from '@crewmap/shared/emotes';
 
 type Motion = 'bounce' | 'wiggle' | 'pulse' | 'shake' | 'drive' | 'spin';
 
@@ -14,6 +14,13 @@ const MOTION: Record<EmotePreset | 'custom', Motion> = {
   honkHonk: 'pulse',
   onMyWay: 'drive',
   missYou: 'pulse',
+  thinkingOfYou: 'pulse',
+  imHere: 'bounce',
+  needRide: 'drive',
+  welcomeHome: 'bounce',
+  chargeUp: 'pulse',
+  driveSafe: 'drive',
+  thanks: 'wiggle',
   custom: 'spin',
 };
 
@@ -131,7 +138,7 @@ export function EmoteArt({ preset, size = 56 }: { preset: EmotePreset | 'custom'
   return (
     <Animated.View style={style}>
       <Svg width={size} height={size} viewBox="0 0 64 64">
-        <Art preset={preset} />
+        <Art preset={preset === 'custom' ? preset : PRESET_FALLBACK[preset]} />
       </Svg>
     </Animated.View>
   );

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
+import { WIKI_LICENCE } from '@crewmap/hazards';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { haversineM } from '@crewmap/shared/geo';
 import { lang, t } from '@crewmap/shared/i18n';
 import { formatDistance, formatMinutes } from '@crewmap/shared/units';
 import { engine } from '../../core/engine';
 import { matrixFrom } from '../../core/mapbox';
+import { useWikiSummary } from '../../core/placeInfo';
 import { useApp } from '../../core/store';
 import { useBackClose } from '../../ui/useBackClose';
 import { Button, Card, H, SectionLabel, T } from '../../ui/kit';
@@ -25,6 +27,7 @@ export default function PlaceSheet() {
   const owner = useApp((s) => (p ? s.friends[p.owner]?.profile.name : undefined));
   const fix = useApp((s) => s.fix);
   const [etaS, setEtaS] = useState<number | null>(null);
+  const wikiInfo = useWikiSummary(p);
   const hasFix = !!fix;
   useEffect(() => {
     const f = useApp.getState().fix;
@@ -67,6 +70,15 @@ export default function PlaceSheet() {
           </View>
         )}
       </Card>
+      {wikiInfo && (
+        <Pressable testID="place-wiki" accessibilityRole="link" accessibilityLabel={`${wikiInfo.title}, ${t('wiki.open')}`} onPress={() => void Linking.openURL(wikiInfo.url)}>
+          <Card style={{ gap: 6, marginTop: 12 }}>
+            <T style={{ fontWeight: '700' }}>{wikiInfo.title}</T>
+            <T soft numberOfLines={4}>{wikiInfo.extract}</T>
+            <T soft style={{ fontSize: 11 }}>{`Wikipedia · ${WIKI_LICENCE}`}</T>
+          </Card>
+        </Pressable>
+      )}
     </View>
   );
 }

@@ -8,6 +8,7 @@ import {
   profileForPolicy,
   Router,
   unb64,
+  StatsAggChannel,
   ViewerDemand,
   type DeviceIdentity,
   type Presence,
@@ -67,6 +68,8 @@ export class Network {
   presenceBook: PresenceBook | null = null;
   /** Whether anyone in this crew has the app open (protocol 4), and my own "watching" signal. */
   demand: ViewerDemand | null = null;
+  /** Leaderboard aggregates, sealed per recipient (protocol 9, D57). */
+  aggs: StatsAggChannel | null = null;
   private offs: (() => void)[] = [];
 
   constructor(
@@ -105,6 +108,10 @@ export class Network {
     this.presencePub = new PresencePublisher(router, () => this.friendIds());
     const book = this.presenceBook;
     this.demand = new ViewerDemand(router, () => this.friendIds(), (id) => book.get(id));
+    this.aggs = new StatsAggChannel(router, this.me, () => this.friendIds(), (id) => {
+      const pk = this.circle.state?.members.get(id)?.boxPk;
+      return pk ? unb64(pk) : null;
+    }, (id) => book.get(id));
     // Replay only what we missed: from the last time this crew was online (10 min overlap), never more than 3 days.
     // Replaying a fixed 3-day window on every launch re-verified and re-decrypted thousands of events (~45 s of CPU).
     const nowS = Math.floor(Date.now() / 1000);
@@ -146,6 +153,8 @@ export class Network {
     this.offs = [];
     this.demand?.stop();
     this.demand = null;
+    this.aggs?.stop();
+    this.aggs = null;
     this.sync?.stop();
     this.router?.stop();
     this.router = null;

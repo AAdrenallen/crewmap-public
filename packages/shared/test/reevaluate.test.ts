@@ -107,6 +107,17 @@ describe('continuous re-evaluation (D43)', () => {
     expect(decideFaster(north(1800), [closed], input, emptyMemory()).offer).toBeNull();
   });
 
+  it('offers a way around a closure ahead but announces only the real time saved', () => {
+    const cur = north(1800);
+    cur.incidents = [{ id: 'c', type: 'road_closure', description: '', closed: true, startAlongM: 5000, endAlongM: 5200, location: P(5, 6) }];
+    const alt = south(1790);
+    const { offer } = decideFaster(cur, [alt], input, emptyMemory());
+    expect(offer?.route).toBe(alt);
+    expect(offer!.savesS).toBe(10);
+    expect(offer!.currentS).toBe(1800);
+    expect(offer!.altS).toBe(1790);
+  });
+
   it('stays inside the Mapbox Directions free tier for a small group', () => {
     const perDriver = monthlyDirectionsEstimate(1.5, 3.5, 0.5, 2, 1);
     expect(perDriver).toBeLessThan(3000);

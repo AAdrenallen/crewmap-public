@@ -2,6 +2,7 @@ import { AppState } from 'react-native';
 import { create } from 'zustand';
 import { BLIP, expireBlips, inAppBlipPolicy, notifIdFor, pushBlip, type Blip, type BlipKind } from '@crewmap/shared/messaging';
 import { t } from '@crewmap/shared/i18n';
+import { collapseEmote, type EmoteCollapse } from '@crewmap/shared/emoteSuggest';
 import { friendContextNow } from './friendContext';
 import { notify } from './notify';
 
@@ -31,14 +32,17 @@ export function blipFor(o: { thread: string; from: string; name: string; kind: B
   useBlips.getState().push({ id: o.thread, from: o.from, name: o.name, kind: o.kind, tiny: a === 'tiny', at: Date.now() });
 }
 
-const emoteCounts = new Map<string, number>();
+const emoteCounts = new Map<string, EmoteCollapse>();
 
-/** Repeated emotes from one friend collapse into one updating notification ("Alex blasted you 5× 🎉"). */
+/**
+ * Emotes from one friend collapse into one updating heads-up notification per sender ("Alex sent you 5 emotes 💭🚗"),
+ * whatever the preset; the latest preset rides in `data` for "Send back".
+ */
 export function notifyEmoteCollapsed(o: { from: string; name: string; preset: string; emoji: string; label: string; silent: boolean }): Promise<void> {
-  const id = notifIdFor('emote', o.from, o.preset);
-  const n = (emoteCounts.get(id) ?? 0) + 1;
-  emoteCounts.set(id, n);
-  const title = n > 1 ? t('notif.emoteMany', { name: o.name, count: String(n), emoji: o.emoji }) : t('notif.emote', { name: o.name, emote: o.label });
+  const id = notifIdFor('emote', o.from);
+  const c = collapseEmote(emoteCounts.get(id), o.emoji);
+  emoteCounts.set(id, c);
+  const title = c.count > 1 ? t('notif.emoteMany', { name: o.name, count: String(c.count), emoji: c.emoji }) : t('notif.emote', { name: o.name, emote: o.label });
   return notify(title, '', { channel: 'circle', silent: o.silent, identifier: id, data: { type: 'emote', friendId: o.from, preset: o.preset } });
 }
 
