@@ -12,12 +12,20 @@ export function projectLines(lines: readonly LatLng[][], box: { x: number; y: nu
   if (all.length < 2) return [];
   const lat0 = (all.reduce((n, p) => n + p.lat, 0) / all.length) * (Math.PI / 180);
   const k = Math.cos(lat0);
-  const xs = all.map((p) => p.lng * k);
-  const ys = all.map((p) => -p.lat);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const spanX = Math.max(1e-9, Math.max(...xs) - minX);
-  const spanY = Math.max(1e-9, Math.max(...ys) - minY);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of all) {
+    const x = p.lng * k;
+    const y = -p.lat;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const spanX = Math.max(1e-9, maxX - minX);
+  const spanY = Math.max(1e-9, maxY - minY);
   const s = Math.min(box.w / spanX, box.h / spanY);
   const ox = box.x + (box.w - spanX * s) / 2;
   const oy = box.y + (box.h - spanY * s) / 2;

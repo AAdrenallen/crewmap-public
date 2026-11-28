@@ -7,8 +7,14 @@ import { kvGet, kvSet } from './db';
 import { useApp } from './store';
 
 const http: HttpGet = async (url, headers) => {
-  const res = await fetch(url, { headers: headers ?? {} });
-  return { status: res.status, headers: res.headers, json: () => res.json(), text: () => res.text() };
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 12_000);
+  try {
+    const res = await fetch(url, { headers: headers ?? {}, signal: ctl.signal });
+    return { status: res.status, headers: res.headers, json: () => res.json(), text: () => res.text() };
+  } finally {
+    clearTimeout(to);
+  }
 };
 
 export const wiki = new WikiPlaceInfo(http, () => countRequest('wiki'));

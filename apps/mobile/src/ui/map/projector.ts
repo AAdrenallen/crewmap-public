@@ -9,12 +9,22 @@ export interface MapProjector {
   showBoth(a: { lat: number; lng: number }, b: { lat: number; lng: number }): void;
 }
 
-let current: MapProjector | null = null;
+const stack: MapProjector[] = [];
 
-export function setProjector(p: MapProjector | null): void {
-  current = p;
+/** Registers a map projector on top of the stack (so opening/closing /route never clobbers Home's projector). */
+export function setProjector(p: MapProjector | null, prev?: MapProjector): void {
+  if (p) {
+    const idx = stack.indexOf(p);
+    if (idx >= 0) stack.splice(idx, 1);
+    stack.push(p);
+  } else if (prev) {
+    const idx = stack.lastIndexOf(prev);
+    if (idx >= 0) stack.splice(idx, 1);
+  } else {
+    stack.pop();
+  }
 }
 
 export function projector(): MapProjector | null {
-  return current;
+  return stack.length > 0 ? stack[stack.length - 1]! : null;
 }

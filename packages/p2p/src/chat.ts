@@ -97,6 +97,7 @@ export function threadOf(m: ChatMessage, me: string, circleId: string): string {
  */
 export interface ChatPersistence {
   put(m: StoredChat): Promise<void>;
+  has?(id: string): Promise<boolean>;
   setStatus(id: string, status: ChatStatus): Promise<void>;
   markRead(thread: string): Promise<void>;
   thread(thread: string): Promise<StoredChat[]>;
@@ -110,8 +111,12 @@ export class ChatStore {
 
   /** Returns false for a duplicate. */
   async add(m: StoredChat): Promise<boolean> {
-    const existing = await this.p.thread(m.thread);
-    if (existing.some((x) => x.id === m.id)) return false;
+    if (this.p.has) {
+      if (await this.p.has(m.id)) return false;
+    } else {
+      const existing = await this.p.thread(m.thread);
+      if (existing.some((x) => x.id === m.id)) return false;
+    }
     await this.p.put(m);
     return true;
   }

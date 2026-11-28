@@ -1,4 +1,4 @@
-import type { MediaAction, MediaOpenResult, MediaService, NowPlaying } from '../contracts';
+import type { MediaAction, MediaBrowseItem, MediaOpenResult, MediaService, NowPlaying } from '../contracts';
 import { native, type NativeNowPlaying } from '../native';
 
 const toNow = (e: NativeNowPlaying | null): NowPlaying | null =>
@@ -40,6 +40,30 @@ export const androidMedia: MediaService = {
     };
   },
   control: (action: MediaAction) => native.mediaControl(action),
+  browse: async (pkg, parentId) => {
+    if (typeof native.mediaBrowse !== 'function') return [];
+    try {
+      const items = await native.mediaBrowse(pkg ?? null, parentId ?? null);
+      return (items ?? []).map((x) => ({
+        id: x.id,
+        title: x.title,
+        subtitle: x.subtitle ?? null,
+        art: x.art ?? null,
+        kind: (x.kind === 'queue' || x.kind === 'folder' || x.kind === 'search' ? x.kind : 'media') as MediaBrowseItem['kind'],
+        browsable: !!x.browsable,
+      }));
+    } catch {
+      return [];
+    }
+  },
+  playItem: (pkg, kind, id) => {
+    if (typeof native.mediaPlayItem !== 'function') return false;
+    try {
+      return native.mediaPlayItem(pkg, kind, id);
+    } catch {
+      return false;
+    }
+  },
   openSplit: async (pkg) => {
     const r = await native.mediaOpenSplit(pkg ?? null);
     return (r === 'split' || r === 'app' ? r : 'none') satisfies MediaOpenResult;

@@ -63,12 +63,12 @@ class NavTts(private val ctx: Context) {
 
   private fun finished(id: String?) {
     if (id == null) return
-    val (cb, empty) = synchronized(lock) {
-      val cb = if (outstanding.containsKey(id)) outstanding.remove(id) else null
-      cb to outstanding.isEmpty()
+    val cb = synchronized(lock) {
+      val c = if (outstanding.containsKey(id)) outstanding.remove(id) else null
+      if (outstanding.isEmpty()) releaseFocusLocked()
+      c
     }
     cb?.invoke()
-    if (empty) releaseFocus()
   }
 
   private fun locale(lang: String): Locale = when (lang) {
@@ -132,15 +132,17 @@ class NavTts(private val ctx: Context) {
   }
 
   private fun acquireFocus() {
-    if (focus != null) return
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build()
-      audio.requestAudioFocus(req)
-      focus = req
+    synchronized(lock) {
+      if (focus != null) return
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build()
+        audio.requestAudioFocus(req)
+        focus = req
+      }
     }
   }
 
-  private fun releaseFocus() {
+  private fun releaseFocusLocked() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) focus?.let { audio.abandonAudioFocusRequest(it) }
     focus = null
   }
@@ -179,6 +181,16 @@ class NavTts(private val ctx: Context) {
 
   fun shutdown() {
     runCatching { tts.stop(); tts.shutdown() }
-    releaseFocus()
+    val pending = synchronized(lock) {
+      failed = true
+      val cbs = mutableListOf<() -> Unit>()
+      cbs.addAll(waiting)
+      waiting.clear()
+      outstanding.values.filterNotNullTo(cbs)
+      outstanding.clear()
+      releaseFocusLocked()
+      cbs
+    }
+    pending.forEach { it() }
   }
 }

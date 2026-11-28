@@ -131,7 +131,7 @@ export function nextStreak(prev: Streak | null, from: string, preset: EmotePrese
 export function streakPop(count: number): { volume: number; intensity: number; sound: boolean } {
   const n = Math.max(1, Math.floor(count));
   return {
-    volume: Math.min(1, 0.55 + n * 0.06),
+    volume: Math.min(1, 0.72 + (n - 1) * 0.06),
     intensity: comboPlan(n).intensity,
     sound: n <= EMOTE_COMBO.maxBursts || n % 2 === 0,
   };

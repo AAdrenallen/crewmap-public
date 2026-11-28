@@ -114,17 +114,34 @@ export function projectOnPolyline(
   }
   const lo = Math.max(0, Math.min(fromIndex, line.length - 2));
   const hi = Math.max(lo + 1, Math.min(toIndex, line.length - 1));
-  let best: PolylineProjection | undefined;
+  const cosLat = Math.cos(p.lat * RAD);
+  let bestDist2 = Infinity;
+  let bestI = lo;
+  let bestT = 0;
   for (let i = lo; i < hi; i++) {
     const a = line[i]!;
     const b = line[i + 1]!;
-    const pr = projectOnSegment(p, a, b);
-    if (!best || pr.distanceM < best.distanceM) {
-      const segLen = cum[i + 1]! - cum[i]!;
-      best = { point: pr.point, segmentIndex: i, t: pr.t, distanceM: pr.distanceM, alongM: cum[i]! + segLen * pr.t };
+    const bx = (b.lng - a.lng) * cosLat;
+    const by = b.lat - a.lat;
+    const px = (p.lng - a.lng) * cosLat;
+    const py = p.lat - a.lat;
+    const len2 = bx * bx + by * by;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, (px * bx + py * by) / len2));
+    // Compute endpoint deltas directly at t=0/t=1 so shared vertices get bit-identical distances across adjacent segments.
+    const dx = t === 0 ? px : t === 1 ? (p.lng - b.lng) * cosLat : px - bx * t;
+    const dy = t === 0 ? py : t === 1 ? p.lat - b.lat : py - by * t;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestDist2) {
+      bestDist2 = d2;
+      bestI = i;
+      bestT = t;
     }
   }
-  return best!;
+  const a = line[bestI]!;
+  const b = line[bestI + 1]!;
+  const point = bestT === 0 ? a : bestT === 1 ? b : { lat: a.lat + (b.lat - a.lat) * bestT, lng: a.lng + (b.lng - a.lng) * bestT };
+  const segLen = cum[bestI + 1]! - cum[bestI]!;
+  return { point, segmentIndex: bestI, t: bestT, distanceM: haversineM(p, point), alongM: cum[bestI]! + segLen * bestT };
 }
 
 /** Point at a given distance along the polyline. */
@@ -174,10 +191,23 @@ const CHUNK_SEGMENTS = 32;
 
 export function polylineChunks(line: LatLng[], padM: number): PolylineChunks {
   const chunks: PolylineChunks['chunks'] = [];
+  const pad = padM + 50;
   for (let lo = 0; lo < line.length - 1; lo += CHUNK_SEGMENTS) {
     const hi = Math.min(line.length - 1, lo + CHUNK_SEGMENTS);
-    // +50 m margin: the bbox is in degrees, distances are geodesic.
-    chunks.push({ lo, hi, box: bboxOf(line.slice(lo, hi + 1), padM + 50) });
+    let south = Infinity;
+    let west = Infinity;
+    let north = -Infinity;
+    let east = -Infinity;
+    for (let i = lo; i <= hi; i++) {
+      const p = line[i]!;
+      if (p.lat < south) south = p.lat;
+      if (p.lat > north) north = p.lat;
+      if (p.lng < west) west = p.lng;
+      if (p.lng > east) east = p.lng;
+    }
+    const dLat = pad / (EARTH_RADIUS_M * RAD);
+    const dLng = pad / (EARTH_RADIUS_M * RAD * Math.cos(((south + north) / 2) * RAD));
+    chunks.push({ lo, hi, box: { south: south - dLat, west: west - dLng, north: north + dLat, east: east + dLng } });
   }
   return { padM, chunks };
 }
@@ -290,8 +320,20 @@ export function coarsen(p: LatLng, cellM: number): LatLng {
 export function dedupeNearby<T extends LatLng & { name: string }>(items: T[], radiusM = 150): T[] {
   const key = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
   const out: T[] = [];
+  const keys: string[] = [];
   for (const it of items) {
-    if (!out.some((o) => key(o.name) === key(it.name) && haversineM(o, it) <= radiusM)) out.push(it);
+    const k = key(it.name);
+    let dup = false;
+    for (let i = 0; i < out.length; i++) {
+      if (keys[i] === k && haversineM(out[i]!, it) <= radiusM) {
+        dup = true;
+        break;
+      }
+    }
+    if (!dup) {
+      out.push(it);
+      keys.push(k);
+    }
   }
   return out;
 }

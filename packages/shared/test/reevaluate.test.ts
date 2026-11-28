@@ -89,12 +89,12 @@ describe('continuous re-evaluation (D43)', () => {
   it('offers only a clear, stable gain; strong gains at once; dismissed alternatives stay quiet', () => {
     // 1 min on 30: under max(2 min, 8 %).
     expect(decideFaster(north(1800), [south(1740)], input, emptyMemory()).offer).toBeNull();
-    // 3.5 min on 30 (> 2.4 min threshold, < 2×): needs to hold for two checks.
-    const first = decideFaster(north(1800), [south(1590)], input, emptyMemory());
+    // 2.8 min on 30 (> 2.4 min threshold, < 1.35×): needs to hold for two checks.
+    const first = decideFaster(north(1800), [south(1630)], input, emptyMemory());
     expect(first.offer).toBeNull();
     expect(first.memory.pending).not.toBeNull();
-    const second = decideFaster(north(1800), [south(1590)], input, first.memory);
-    expect(second.offer!.savesS).toBe(210);
+    const second = decideFaster(north(1800), [south(1630)], input, first.memory);
+    expect(second.offer!.savesS).toBe(170);
     // 10 min: offered right away, with auto-dismiss.
     const strong = decideFaster(north(1800), [south(1200)], input, emptyMemory()).offer!;
     expect(strong.expiresAt - strong.createdAt).toBe(REEVAL.offerTtlMs);

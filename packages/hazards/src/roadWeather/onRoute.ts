@@ -87,7 +87,13 @@ export function roadWeatherOnRoute(route: Pick<NavRoute, 'geometry' | 'cum' | 'd
   zones.sort((x, y) => x.startM - y.startM);
   const merged: RoadWeatherZone[] = [];
   for (const z of zones) {
-    const prev = [...merged].reverse().find((m) => m.category === z.category);
+    let prev: RoadWeatherZone | undefined;
+    for (let i = merged.length - 1; i >= 0; i--) {
+      if (merged[i]!.category === z.category) {
+        prev = merged[i];
+        break;
+      }
+    }
     if (prev && z.startM - prev.endM <= ROAD_WEATHER.mergeGapM) {
       prev.endM = Math.max(prev.endM, z.endM);
       if (z.source === 'eccc' && prev.source === 'quebec') Object.assign(prev, { source: z.source, nameEn: z.nameEn, nameFr: z.nameFr });

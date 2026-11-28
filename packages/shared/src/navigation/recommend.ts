@@ -211,14 +211,26 @@ export function recommend(cands: RouteCandidate[], input: RecommendInput, cfg: C
   const rc = cfg.recommend;
   const bucket = timeBucket(input.now);
   const period = periodOf(bucket);
-  const models = classModelsFor(cands, input, cfg);
   const skip = new Set(input.samples.flatMap((s) => (s.tripId ? [s.tripId] : [])));
-  const scored = cands.map((c) => {
+  const ctls = cands.map((c) => controlDelayS(c.route, rc));
+  const habitsByRoute = new Map<string, ReturnType<typeof habitObs>>();
+  if (input.traces?.length) {
+    cands.forEach((c, i) => {
+      if (!habitsByRoute.has(c.route.id)) habitsByRoute.set(c.route.id, habitObs(c.route, input.traces!, ctls[i]!, input.now, skip, cfg));
+    });
+  }
+  const models = input.models ?? (() => {
+    const obs = sampleObs(input.samples);
+    for (const h of habitsByRoute.values()) obs.push(...h.bias);
+    const crew = input.crew ?? [];
+    return fitClassModels(obs, crew.length ? { peak: crewPrior(crew, 'peak'), other: crewPrior(crew, 'other') } : undefined);
+  })();
+  const scored = cands.map((c, i) => {
     const r = c.route;
-    const ctl = controlDelayS(r, rc);
+    const ctl = ctls[i]!;
     const predicted = r.durationS + ctl;
     const bias = routeBias(r, predicted, models, period);
-    const habitDrives = input.traces?.length ? habitObs(r, input.traces, ctl, input.now, skip, cfg).obs : [];
+    const habitDrives = habitsByRoute.get(r.id)?.obs ?? [];
     const { factor, n } = correctionFactor(r, input.samples, bucket, cfg, bias.factor, habitDrives);
     const habit = n >= 2 ? 0 : Math.min(rc.habitCap, habitOf(r, input.learned, cfg));
     const share = fastShare(r);
@@ -228,9 +240,10 @@ export function recommend(cands: RouteCandidate[], input: RecommendInput, cfg: C
     const expectedS = predicted * factor;
     const risk = ETA_BIAS.riskK[period] * bias.sigmaS * factor;
     const unknownS = (bias.unknownS * rc.priorN) / (n + rc.priorN);
-    const costS = expectedS + roadPenaltyS(r, rc) + Math.max(0, input.hazardCostS?.(r) ?? 0) + unknownS + risk;
+    const roadPen = roadPenaltyS(r, rc);
+    const costS = expectedS + roadPen + Math.max(0, input.hazardCostS?.(r) ?? 0) + unknownS + risk;
     const out: RouteCandidate = { ...c, expectedS, costS, samples: n, overUsualMin, badge: null, tags: [], deltaS: 0 };
-    return { c: out, e: costS, share, tie: ctl + roadPenaltyS(r, rc) - share * rc.fastShareS - habit * rc.habitS };
+    return { c: out, e: costS, share, tie: ctl + roadPen - share * rc.fastShareS - habit * rc.habitS };
   });
   const best = Math.min(...scored.map((s) => s.e));
   const band = Math.max(rc.tieMinS, rc.tieFrac * best);

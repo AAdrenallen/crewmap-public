@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOutUp, ZoomIn } from 'react-native-reanimated';
-import { Camera, LineLayer, MapView, MarkerView, ShapeSource } from '@rnmapbox/maps';
+import { Camera, LineLayer, MapView, MarkerView, ShapeSource, StyleImport } from '@rnmapbox/maps';
 import { bboxOf } from '@crewmap/shared/geo';
 import { playbackClock, posesAt, type PlaybackTrack, type TimelineItem } from '@crewmap/shared/memories';
 import { formatClock } from '@crewmap/shared/units';
@@ -10,6 +10,7 @@ import { platform } from '@crewmap/platform';
 import { onMapboxLoadingError } from '../../core/errorLog';
 import { Bouncy, Chip } from '../kit';
 import { Glyph, Scrubber } from '../charts';
+import { useMapLightPreset } from '../map/CrewMapView';
 import { MapSprite } from '../map/Sprites';
 import { useReduceMotion } from '../useReduceMotion';
 import { font, type, useTheme } from '../theme';
@@ -26,6 +27,7 @@ const BUBBLE_MS = 1400;
 export function PlaybackMap({ tracks, people, timeline, height = 340 }: { tracks: PlaybackTrack[]; people: Record<string, Person>; timeline: TimelineItem[]; height?: number }) {
   const th = useTheme();
   const reduce = useReduceMotion();
+  const mapPreset = useMapLightPreset();
   const clock = useMemo(() => playbackClock(tracks), [tracks]);
   const [play, setPlay] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -43,6 +45,9 @@ export function PlaybackMap({ tracks, people, timeline, height = 340 }: { tracks
 
   useEffect(() => {
     if (!playing) return;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') setPlaying(false);
+    });
     last.current = Date.now();
     const h = setInterval(() => {
       const now = Date.now();
@@ -58,7 +63,10 @@ export function PlaybackMap({ tracks, people, timeline, height = 340 }: { tracks
         return n;
       });
     }, FRAME_MS);
-    return () => clearInterval(h);
+    return () => {
+      sub.remove();
+      clearInterval(h);
+    };
   }, [playing, rate, clock]);
 
   const realT = clock.realAt(play);
@@ -105,6 +113,7 @@ export function PlaybackMap({ tracks, people, timeline, height = 340 }: { tracks
     <View>
       <View style={{ height }} testID="mem-playback">
         <MapView style={{ flex: 1 }} styleURL="mapbox://styles/mapbox/standard" scaleBarEnabled={false} compassEnabled={false} onMapLoadingError={onMapboxLoadingError} attributionPosition={{ bottom: 6, left: 6 }} logoPosition={{ bottom: 6, left: 80 }}>
+          <StyleImport id="basemap" existing config={{ lightPreset: mapPreset }} />
           <Camera defaultSettings={{ bounds }} />
           <ShapeSource id="mem-full" shape={full}>
             <LineLayer id="mem-full-line" slot="top" style={{ lineColor: ['get', 'color'], lineWidth: 3, lineOpacity: 0.25, lineCap: 'round', lineJoin: 'round' }} />

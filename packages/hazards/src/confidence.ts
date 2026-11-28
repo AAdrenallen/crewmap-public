@@ -90,7 +90,9 @@ export function fuse(members: Hazard[], type: HazardType, latestReportAt: number
   if (all.every((h) => h.source === 'anon')) {
     const times = all.map((h) => h.reportedAt);
     const spread = times.length >= 2 && Math.max(...times) - Math.min(...times) >= CONFIDENCE.anonSpreadMs;
-    if (!spread) c = Math.min(c, CONFIDENCE.anonOnlyCap);
+    const confirmed = all.some((h) => h.confirmations >= 2);
+    if (!spread && !confirmed) c = Math.min(c, CONFIDENCE.anonOnlyCap);
+    else if (confirmed) c = Math.max(c, CONFIDENCE.high);
   }
   const af = ageFactor(type, Math.max(0, now - latestReportAt));
   c *= af;

@@ -7,13 +7,13 @@ export const DRIVE_ALONG = {
   /** An unanswered invite lapses after this. */
   inviteTtlMs: 15 * 60_000,
   /** Session ends when no companion has been heard from for this long. */
-  silenceEndMs: 10 * 60_000,
-  /** Session ends this long after my drive ended (gives time for a fuel stop). */
-  parkedEndMs: 8 * 60_000,
+  silenceEndMs: 20 * 60_000,
+  /** Session ends this long after my drive ended (gives time for a fuel/food stop). */
+  parkedEndMs: 20 * 60_000,
   /** Group drive (D46): within this of the destination counts as arrived. */
   arriveM: 75,
   /** Group drive: my live presence stops this long after I arrived (battery). */
-  arrivedLingerMs: 5 * 60_000,
+  arrivedLingerMs: 15 * 60_000,
   /** ETA guess before a route exists: road factor over the straight line, and an average speed (m/s). */
   roadFactor: 1.3,
   avgSpeedMps: 13.9,

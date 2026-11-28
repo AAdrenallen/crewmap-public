@@ -199,13 +199,19 @@ class Engine {
     return this.reopening;
   }
 
+  private windowTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Keep the radio open for a short window (push ping, periodic sync, an outgoing alert). */
   async radioWindow(ms = RADIO_WINDOW_MS): Promise<void> {
     this.radioUntil = Math.max(this.radioUntil, Date.now() + ms);
     const wasClosed = !this.crews.started;
     if (wasClosed) await this.reopenRadio();
-    if (wasClosed) await this.crews.catchUp();
-    setTimeout(() => this.governRadio(), ms + 1000);
+    else await this.crews.catchUp();
+    if (this.windowTimer) clearTimeout(this.windowTimer);
+    this.windowTimer = setTimeout(() => {
+      this.windowTimer = null;
+      this.governRadio();
+    }, ms + 1000);
   }
 
   /** Stop and restart every service (benchmark phase changes, transport switches). */
@@ -262,15 +268,35 @@ class Engine {
       await this.crews.start();
       this.emotes.start();
       this.chat.start();
+      this.companions.start();
+      this.asks.start();
+      this.memories.start();
       startCheckInReceiver(this.crews, this.me);
-    } else if (!this.crews.started) {
+      try {
+        await this.crews.catchUp();
+        // Give relays time to deliver stored events and acks to go out, within the 25 s task window.
+        await new Promise((r) => setTimeout(r, 12_000));
+      } finally {
+        if (!this.running) {
+          this.emotes.stop();
+          this.chat.stop();
+          this.companions.stop();
+          this.asks.stop();
+          this.memories.stop();
+          this.crews.stop();
+          const urls = [...(this.pool.listConnectionStatus?.().keys() ?? [])];
+          if (urls.length) this.pool.close?.(urls);
+        }
+      }
+      return;
+    }
+    if (!this.crews.started) {
       // Relays closed by the radio governor: open them for this sync window only.
       await this.radioWindow();
-      return void (await new Promise((r) => setTimeout(r, 15_000)));
+      return void (await new Promise((r) => setTimeout(r, 12_000)));
     }
     await this.crews.catchUp();
-    // Give relays time to deliver stored events and acks to go out.
-    await new Promise((r) => setTimeout(r, 15_000));
+    await new Promise((r) => setTimeout(r, 12_000));
   }
 
   async saveProfile(p: Omit<Profile, 'deviceId'>): Promise<void> {

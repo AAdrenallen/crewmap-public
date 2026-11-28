@@ -82,7 +82,10 @@ export class ConvoyTracker {
    */
   setLine(line: readonly LatLng[] | null, leader: string | null = null): void {
     const l = line && line.length >= 2 ? [...line] : [];
-    const key = l.length ? `${l.length}|${l[0]!.lat},${l[0]!.lng}|${l[l.length - 1]!.lat},${l[l.length - 1]!.lng}` : '';
+    const pt = (i: number) => `${l[i]!.lat.toFixed(5)},${l[i]!.lng.toFixed(5)}`;
+    const key = l.length
+      ? `${l.length}|${pt(0)}|${pt(Math.floor(l.length / 4))}|${pt(Math.floor(l.length / 2))}|${pt(Math.floor((l.length * 3) / 4))}|${pt(l.length - 1)}`
+      : '';
     if (key === this.key) return;
     this.key = key;
     const lead = leader ? this.tracks.get(leader) : undefined;
@@ -254,11 +257,14 @@ export function gapLabel(dir: GapLabel['dir'], gapM: number, gapS: number | null
   if (lights !== null && lights >= 1 && lights <= CONVOY.lightsMax && gapM <= CONVOY.lightsMaxM) return { dir, kind: 'lights', n: lights };
   if (gapS !== null && gapS >= 60) {
     const min = gapS / 60;
-    const b = [...CONVOY.minuteBuckets].reverse().find((x) => min >= x);
-    if (b !== undefined) return { dir, kind: 'min', n: b };
+    for (let i = CONVOY.minuteBuckets.length - 1; i >= 0; i--) {
+      if (min >= CONVOY.minuteBuckets[i]!) return { dir, kind: 'min', n: CONVOY.minuteBuckets[i]! };
+    }
   }
-  const m = [...CONVOY.meterBuckets].reverse().find((x) => gapM >= x);
-  return m !== undefined ? { dir, kind: 'm', n: m } : null;
+  for (let i = CONVOY.meterBuckets.length - 1; i >= 0; i--) {
+    if (gapM >= CONVOY.meterBuckets[i]!) return { dir, kind: 'm', n: CONVOY.meterBuckets[i]! };
+  }
+  return null;
 }
 
 const labelKey = (l: GapLabel | null) => (l ? `${l.dir}|${l.kind}|${l.n}` : '');

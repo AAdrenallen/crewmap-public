@@ -33,8 +33,8 @@ export const MEMORY_LIMITS = {
   manifestsPerMin: 12,
   chunksPerMin: 240,
   maxWaiting: 24,
-  /** Completed blobs whose manifest has not arrived yet (held in memory only). */
-  maxOrphans: 4,
+  /** Completed blobs whose manifest has not arrived yet (held in memory during newest-first catch-up replay). */
+  maxOrphans: 24,
   /** A photo expires on every phone at most this long after it was shared (the sender may choose less). */
   maxKeepDays: 365,
   /** Relay copies of every memory kind (router KINDS). */

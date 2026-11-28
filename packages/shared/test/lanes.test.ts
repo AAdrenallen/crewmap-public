@@ -61,7 +61,7 @@ describe('lanes — real Mapbox data', () => {
     expect(laneStrip(l, 'left')).toHaveLength(3);
   });
 
-  it('banner vs intersection count mismatch merges lanes sharing a movement, or hides when ambiguous', () => {
+  it('banner vs intersection count mismatch merges lanes sharing a movement, or keeps banner lanes when ambiguous', () => {
     const banner = parseLanes([
       { directions: ['left'], active: false },
       { directions: ['straight'], active: false },
@@ -78,7 +78,9 @@ describe('lanes — real Mapbox data', () => {
       { directions: ['straight'], active: false },
       { directions: ['right'], active: true },
     ]);
-    expect(laneStrip(four, 'right', inter)).toBeNull();
+    const fallback = laneStrip(four, 'right', inter);
+    expect(fallback).toHaveLength(4);
+    expect(fallback![3]!.active).toBe(true);
   });
 
   it('intersection lanes (indications/valid/valid_indication) parse to one lane each', () => {
@@ -129,7 +131,8 @@ describe('lanes — synthetic', () => {
   it('hides implausible strips', () => {
     const mk = (n: number, valid: (i: number) => boolean) => parseLanes(Array.from({ length: n }, (_, i) => ({ indications: ['straight'], valid: valid(i) })));
     expect(laneStrip(mk(1, () => true), 'straight')).toBeNull(); // single lane
-    expect(laneStrip(mk(9, (i) => i === 0), 'straight')).toBeNull(); // too many
+    expect(laneStrip(mk(9, (i) => i === 0), 'straight')).toHaveLength(9); // wide multi-lane highway
+    expect(laneStrip(mk(11, (i) => i === 0), 'straight')).toBeNull(); // too many
     expect(laneStrip(mk(3, () => false), 'straight')).toBeNull(); // all invalid
     expect(laneStrip(mk(3, () => true), 'straight')).toBeNull(); // no choice
     // valid lane only points left while we turn right → contradictory

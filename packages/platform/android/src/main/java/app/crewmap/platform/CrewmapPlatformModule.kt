@@ -36,6 +36,8 @@ class CrewmapPlatformModule : Module() {
   private var screenReceiver: BroadcastReceiver? = null
   private var navTts: NavTts? = null
   private fun tts(): NavTts = navTts ?: NavTts(ctx).also { navTts = it }
+  private var soundPool: EmoteSoundPool? = null
+  private fun sounds(): EmoteSoundPool = soundPool ?: EmoteSoundPool(ctx).also { soundPool = it }
   private var mediaBridge: MediaBridge? = null
   private fun media(): MediaBridge = mediaBridge ?: MediaBridge(ctx).also { mediaBridge = it }
 
@@ -57,6 +59,8 @@ class CrewmapPlatformModule : Module() {
       screenReceiver = null
       navTts?.shutdown()
       navTts = null
+      soundPool?.release()
+      soundPool = null
       mediaBridge?.stopNow()
       mediaBridge = null
     }
@@ -76,6 +80,10 @@ class CrewmapPlatformModule : Module() {
     AsyncFunction("ttsVoiceName") { lang: String, promise: Promise -> tts().voiceName(lang) { promise.resolve(it) } }
 
     AsyncFunction("ttsVoices") { promise: Promise -> tts().voices { promise.resolve(it) } }
+
+    AsyncFunction("soundPlay") { uri: String, volume: Double, rate: Double, duckUnderVoice: Boolean, promise: Promise ->
+      sounds().play(uri, volume.toFloat(), rate.toFloat(), duckUnderVoice) { ok -> promise.resolve(ok) }
+    }
 
     // --- Activity recognition -----------------------------------------------------------------------------------
 
@@ -131,6 +139,15 @@ class CrewmapPlatformModule : Module() {
       val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
       val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
       mapOf("interactive" to pm.isInteractive, "locked" to km.isKeyguardLocked)
+    }
+
+    Function("setKeepScreenOn") { on: Boolean ->
+      val act = appContext.currentActivity ?: return@Function false
+      act.runOnUiThread {
+        if (on) act.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else act.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+      }
+      true
     }
 
     // --- Battery optimisation ----------------------------------------------------------------------------------------
@@ -233,6 +250,12 @@ class CrewmapPlatformModule : Module() {
     Function("mediaStop") { media().stop() }
     Function("mediaCurrent") { media().snapshot() }
     Function("mediaControl") { action: String -> media().control(action) }
+    AsyncFunction("mediaBrowse") { pkg: String?, parentId: String?, promise: Promise ->
+      media().browse(pkg, parentId) { promise.resolve(it) }
+    }
+    Function("mediaPlayItem") { pkg: String?, kind: String, id: String ->
+      media().playItem(appContext.currentActivity, pkg, kind, id)
+    }
     AsyncFunction("mediaOpenSplit") { pkg: String?, promise: Promise ->
       media().openSplit(appContext.currentActivity, pkg) { promise.resolve(it) }
     }

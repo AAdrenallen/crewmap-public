@@ -191,8 +191,7 @@ export class MontrealSource implements HazardSource {
     if (!this.cache || ctx.now - this.cache.at >= MTL_REFRESH_MS) {
       this.tracker.attempt(ctx.now);
       try {
-        const impactRows = await this.all(mtlImpactsUrl, ctx.now);
-        const permits = impactRows ? await this.all(mtlPermitsUrl, ctx.now) : null;
+        const [impactRows, permits] = await Promise.all([this.all(mtlImpactsUrl, ctx.now), this.all(mtlPermitsUrl, ctx.now)]);
         if (permits && permits.length && !('latitude' in permits[0]! && 'duration_end_date' in permits[0]!)) {
           this.tracker.fail(ctx.now, 'shapeChanged', 'permit fields missing');
         } else if (impactRows && permits) {

@@ -79,7 +79,7 @@ export class MtmdCameraSource {
   }
 
   /** Re-download weekly; a failure waits an hour before the next try. */
-  async refresh(now: number): Promise<boolean> {
+  async refresh(now: number, lang: 'fr' | 'en' = 'fr'): Promise<boolean> {
     if (now - this.at < MTMD_CAM_REFRESH_MS || now - this.triedAt < 3600_000) return false;
     this.triedAt = now;
     this.tracker.attempt(now);
@@ -90,7 +90,7 @@ export class MtmdCameraSource {
         this.tracker.fail(now, 'degraded', `HTTP ${res.status}`, res.status);
         return false;
       }
-      const got = normaliseMtmdCameras(await res.json(), now);
+      const got = normaliseMtmdCameras(await res.json(), now, lang);
       if (!got) {
         this.tracker.fail(now, 'shapeChanged', 'ms:infos_cameras: not a FeatureCollection');
         return false;

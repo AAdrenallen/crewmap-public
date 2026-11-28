@@ -3,7 +3,7 @@ import type { Lane, ManeuverModifier } from './route';
 /** Lane-guidance tunables. */
 export const LANE_LIMITS = {
   /** Strips wider than this are treated as bad data and hidden. */
-  maxLanes: 8,
+  maxLanes: 10,
   /** A single lane carries no choice — nothing to show. */
   minLanes: 2,
 } as const;
@@ -169,5 +169,6 @@ export function reconcileLanes(banner: readonly Lane[] | null | undefined, inter
   if (a.length === b.length) return foldUnusedBays(a);
   const [long, short] = a.length > b.length ? [a, b] : [b, a];
   const merged = mergeToCount(long, foldUnusedBays(short).length);
-  return merged;
+  // Fall back to Mapbox's banner lanes rather than blanking lane guidance on ambiguous intersection count mismatches.
+  return merged ?? foldUnusedBays(a);
 }

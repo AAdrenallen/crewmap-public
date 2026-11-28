@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, CircleLayer, MapView, ShapeSource } from '@rnmapbox/maps';
+import { Camera, CircleLayer, MapView, ShapeSource, StyleImport } from '@rnmapbox/maps';
+import { useMapLightPreset } from '../../ui/map/CrewMapView';
 import { normalizePlace, PLACE_DEFAULT_RADIUS_M, PLACE_MAX_RADIUS_M, PLACE_MIN_RADIUS_M, PLACE_NAME_MAX, PLACE_TYPE_COLOR, PLACE_TYPES, validPlaceName, type PlaceType } from '@crewmap/shared/places';
 import { lang, t } from '@crewmap/shared/i18n';
 import { engine } from '../../core/engine';
@@ -24,6 +25,7 @@ export default function EditPlace() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const th = useTheme();
+  const mapPreset = useMapLightPreset();
   const me = useApp((s) => s.me);
   const fix = useApp((s) => s.fix);
   const existing = useApp((s) => s.places.find((p) => p.id === params.id));
@@ -39,12 +41,14 @@ export default function EditPlace() {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [saving, setSaving] = useState(false);
+  const fixRef = useRef(fix);
+  fixRef.current = fix;
 
   useEffect(() => {
     if (q.trim().length < 3) return setResults([]);
-    const timer = setTimeout(() => void searchForward(q.trim(), fix, lang()).then(setResults, () => setResults([])), 350);
+    const timer = setTimeout(() => void searchForward(q.trim(), fixRef.current, lang()).then(setResults, () => setResults([])), 350);
     return () => clearTimeout(timer);
-  }, [q, fix]);
+  }, [q]);
 
   const save = async () => {
     if (!pos || !me) return;
@@ -109,6 +113,7 @@ export default function EditPlace() {
       {pos && (
         <View style={[styles.map, { borderColor: th.border }]}>
           <MapView style={{ flex: 1 }} styleURL="mapbox://styles/mapbox/standard" scaleBarEnabled={false} onMapLoadingError={onMapboxLoadingError} onPress={(f) => setPos({ lat: f.geometry.coordinates[1]!, lng: f.geometry.coordinates[0]! })}>
+            <StyleImport id="basemap" existing config={{ lightPreset: mapPreset }} />
             <Camera centerCoordinate={[pos.lng, pos.lat]} zoomLevel={radius > 250 ? 14.5 : 15.5} animationDuration={300} />
             <ShapeSource id="place-pos" shape={{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [pos.lng, pos.lat] } }}>
               <CircleLayer

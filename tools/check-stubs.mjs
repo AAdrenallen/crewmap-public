@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOTS = ['apps/mobile/src', 'packages', 'relay/src'];
-const SKIP = /(node_modules|[\/]test[\/]|\.test\.|[\/]ios[\/]CONTRACT\.md$|[\/]android[\/]build[\/])/;
+const SKIP = /(node_modules|[\\/]test[\\/]|\.test\.|[\\/]ios[\\/]CONTRACT\.md$|[\\/]android[\\/]build[\\/])/;
 const BAD = [/\bTODO\b/, /\bFIXME\b/, /\bXXX\b/, /not implemented/i, /\bplaceholder data\b/i, /lorem ipsum/i, /\bstub(bed)?\b/i];
 const EXT = /\.(ts|tsx|kt|java|json)$/;
 const hits = [];

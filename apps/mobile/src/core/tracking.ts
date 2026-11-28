@@ -4,9 +4,11 @@ import {
   DrivingPipeline,
   markPassenger,
   type Activity,
+  type ImuSample,
   type RiskyEvent,
   type Trip,
 } from '@crewmap/shared/driving';
+import type { RoughCell } from '@crewmap/shared/insight';
 import { haversineM } from '@crewmap/shared/geo';
 import {
   addDriveSample,
@@ -41,6 +43,7 @@ import { recordError } from './errorLog';
 import { headingToMe, type EtaView } from '@crewmap/shared/etaRefresh';
 import { checkInActivity, checkInCrash, checkInFix, startCheckIn } from './checkIn';
 import { forgetParkedFromTrip, parkingFix, parkingTick, parkingTripEnded, parkingTripStarted } from './parking';
+import { mergeDriveRoughness, recordTripInsights } from './tripInsights';
 
 /** On-device route learning: drives of previewed routes (actual vs predicted) and the last preview. */
 export const DRIVE_SAMPLES_KEY = 'routeDrives';
@@ -110,6 +113,8 @@ export class Tracking {
   private lastPresencePos: { lat: number; lng: number } | null = null;
   private offlineTrail: [number, number, number][] = [];
   private recent: Fix[] = [];
+  private imuBuf: ImuSample[] = [];
+  private driveRough = new Map<string, RoughCell>();
   private lastLimitAt = 0;
   private limits: Promise<LimitCache> | null = null;
   private limitsSavedAt = 0;
@@ -310,12 +315,18 @@ export class Tracking {
     this.onProfileChange(p);
     const driving = p === 'driving' || p === 'navigating';
     if (driving && !this.stopImu) {
-      this.stopImu = platform.motion.startImu(20, (time, magnitude) =>
-        this.pipeline.imu({ t: time, magnitude }),
-      );
+      this.stopImu = platform.motion.startImu(20, (time, magnitude) => {
+        this.pipeline.imu({ t: time, magnitude });
+        this.imuBuf.push({ t: time, magnitude });
+        if (this.imuBuf.length >= 1200) {
+          mergeDriveRoughness(this.driveRough, this.recent, this.imuBuf);
+          this.imuBuf.length = 0;
+        }
+      });
     } else if (!driving && this.stopImu) {
       this.stopImu();
       this.stopImu = null;
+      this.imuBuf.length = 0;
     }
   }
 
@@ -346,8 +357,8 @@ export class Tracking {
       this.recent.push(f);
       if (this.recent.length > 20) this.recent.shift();
       const limit = st.nav?.progress?.limitKph ?? st.limitKph;
-      // Phone handling: emit a touch every 2 s while unlocked and moving.
-      if (this.unlockedSince !== null && (f.speed ?? 0) >= 4.17 && !st.nav?.active)
+      // Phone handling: emit a touch every 2 s while unlocked and moving (not while navigating in-app or in Waze/Maps).
+      if (this.unlockedSince !== null && (f.speed ?? 0) >= 4.17 && !st.nav?.active && !externalEta())
         this.pipeline.interaction({ t: f.t, kind: 'touch' });
       for (const trip of this.pipeline.location(f, limit)) await this.onTripEnded(trip);
       checkInFix(f);
@@ -450,6 +461,7 @@ export class Tracking {
     this.lastLimitAt = f.t;
     if (known !== null || level === 'off') {
       if (known !== null) countSaved('mapMatching');
+      else if (st.limitKph !== null) useApp.getState().set({ limitKph: null });
       return;
     }
     try {
@@ -471,22 +483,23 @@ export class Tracking {
     await this.maybePresence(fix);
   }
 
+  private lastBatPollAt = 0;
+
   private async maybePresence(f: Fix): Promise<void> {
     const now = Date.now();
     // A coarse (Wi-Fi/cell) fix jitters by its accuracy: only a move beyond it counts.
     const moved =
       !this.lastPresencePos || haversineM(this.lastPresencePos, f) > Math.max(SIGNIFICANT_MOVE_M, f.accuracy);
     const every = (this.net.watched() ? PRESENCE_EVERY_MS : PRESENCE_UNWATCHED_MS)[this.profile];
-    // expo-battery's level listener only fires on BATTERY_LOW/OKAY on Android: read the level on each existing tick
-    // (one cheap system call, no extra wake-up) so a charge shows up and every presence carries the current reading.
-    this.battery = await platform.power.battery().catch(() => this.battery);
-    const batChanged = batteryChanged(this.lastPresenceBat, this.battery);
-    if (
-      now - this.lastPresenceAt < every &&
-      !(moved && now - this.lastPresenceAt > 15_000) &&
-      !(batChanged && now - this.lastPresenceAt > BATTERY_PUBLISH_GAP_MS)
-    )
-      return;
+    const timeOrMoveDue = now - this.lastPresenceAt >= every || (moved && now - this.lastPresenceAt > 15_000);
+    // Avoid 1 Hz native battery IPC: only poll when a publish is due or once per BATTERY_PUBLISH_GAP_MS to catch charge/level shifts.
+    let batChanged = false;
+    if (timeOrMoveDue || now - this.lastBatPollAt >= BATTERY_PUBLISH_GAP_MS) {
+      this.lastBatPollAt = now;
+      this.battery = await platform.power.battery().catch(() => this.battery);
+      batChanged = batteryChanged(this.lastPresenceBat, this.battery);
+    }
+    if (!timeOrMoveDue && !(batChanged && now - this.lastPresenceAt > BATTERY_PUBLISH_GAP_MS)) return;
     const st = useApp.getState();
     const p: Presence = {
       lat: f.lat,
@@ -507,7 +520,7 @@ export class Tracking {
       p.etaSrc = ext.app;
     }
     const online = (await platform.power.network()).online;
-    useApp.getState().set({ online });
+    if (online !== st.online) useApp.getState().set({ online });
     if (!online) {
       this.offlineTrail.push([f.lat, f.lng, f.t]);
       if (this.offlineTrail.length > 60) this.offlineTrail.shift();
@@ -525,6 +538,8 @@ export class Tracking {
 
   private onTripStarted(startedAt: number): void {
     this.tripStartFix = useApp.getState().fix;
+    this.imuBuf.length = 0;
+    this.driveRough.clear();
     parkingTripStarted(startedAt, this.tripStartFix);
     this.drivingHomeSent = false;
     useApp.getState().set({ tripStartedAt: startedAt, driving: true, liveEvents: [] });
@@ -542,6 +557,13 @@ export class Tracking {
   }
 
   private async onTripEnded(trip: Trip): Promise<void> {
+    if (this.imuBuf.length > 0) {
+      mergeDriveRoughness(this.driveRough, this.recent, this.imuBuf);
+      this.imuBuf.length = 0;
+    }
+    const roughSnapshot = new Map(this.driveRough);
+    this.driveRough.clear();
+    const roughSpot = await recordTripInsights(trip, roughSnapshot, useApp.getState().hazards).catch(() => null);
     await db.saveTrip(trip);
     await this.learnRoute(trip);
     useApp
@@ -556,6 +578,7 @@ export class Tracking {
           durationS: trip.durationS,
           events: trip.events.length,
           passenger: trip.passenger,
+          roughSpot,
         },
       });
     this.tripStartFix = null;
@@ -656,14 +679,14 @@ export class Tracking {
     }
     const positions = [
       { id: st.me.deviceId, lat: st.fix.lat, lng: st.fix.lng },
-      ...Object.values(st.friends)
+      ...Object.values(st.allFriends)
         .filter((f) => f.presence && f.presence.prec === 'p')
         .map((f) => ({ id: f.profile.deviceId, lat: f.presence!.lat, lng: f.presence!.lng })),
     ];
     for (const m of this.near.friendsNear(positions, Date.now())) {
       if (m.kind !== 'friendsNear') continue;
       const name = (id: string) =>
-        id === st.me!.deviceId ? st.me!.name : (st.friends[id]?.profile.name ?? '');
+        id === st.me!.deviceId ? st.me!.name : (st.allFriends[id]?.profile.name ?? '');
       useApp.getState().set({ moments: [...useApp.getState().moments, m].slice(-5) });
       // Two other friends meeting: never a notification while I'm driving or navigating (it lives in their cards).
       const mine = m.a === st.me.deviceId || m.b === st.me.deviceId;

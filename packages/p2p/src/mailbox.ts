@@ -2,7 +2,7 @@ import { canonical, mergeLogs, replay, type CircleOp, type CircleState } from '.
 import { openFrom, sealTo } from './crypto/envelope';
 import type { DeviceIdentity } from './crypto/identity';
 import { fromUtf8, hex, sodium, u32be, unb64, utf8, concat } from './crypto/sodium';
-import { publishSealed, subscribeSealed } from './transport/inviteChannel';
+import { publishSealed, subscribeSealedMany } from './transport/inviteChannel';
 import type { RelayPool } from './transport/types';
 
 /**
@@ -54,21 +54,18 @@ export class Mailbox {
     private readonly onLogRequest: (circleId: string, from: string, fromSeq: number) => void,
   ) {}
 
-  /** Listen on this and the previous 4 weeks' topics. */
+  /** Listen on this and the previous 4 weeks' topics in one combined subscription. */
   start(now: number, sinceS: number): void {
     this.sub?.close();
     const w = weekIndex(now);
     const topics = [0, 1, 2, 3, 4].map((d) => mailboxTopic(this.me.boxPk, w - d));
-    const subs = topics.map((topic) =>
-      subscribeSealed(this.pool, this.relays(), topic, sinceS, (sealed) => {
-        try {
-          this.handle(JSON.parse(fromUtf8(openFrom(this.me, sealed))) as MailMsg);
-        } catch {
-          // not for us
-        }
-      }),
-    );
-    this.sub = { close: () => subs.forEach((s) => s.close()) };
+    this.sub = subscribeSealedMany(this.pool, this.relays(), topics, sinceS, (sealed) => {
+      try {
+        this.handle(JSON.parse(fromUtf8(openFrom(this.me, sealed))) as MailMsg);
+      } catch {
+        // not for us
+      }
+    });
   }
 
   stop(): void {

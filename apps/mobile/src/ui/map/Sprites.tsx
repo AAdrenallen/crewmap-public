@@ -1,9 +1,9 @@
-import { Component, useEffect, useState, type ReactNode } from 'react';
+import { Component, memo, useEffect, useState, type ReactNode } from 'react';
 import { useActiveInterval } from '../useActiveInterval';
 import { Image, View } from 'react-native';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import { DEFAULT_CAR, headingFrame, SPRITE_HEADINGS, type AvatarConfig, type CarConfig } from '@crewmap/shared/avatar';
-import { AVATAR_FRAMES, AVATAR_HALF, avatarPortrait, avatarSheet, parkedSheet, RIDE_HALF, rideSheet } from '../../avatar3d/baker';
+import { AVATAR_FRAMES, AVATAR_HALF, avatarPortrait, avatarSheet, parkedSheet, POSE_HALF, POSE_SHEET_FRAMES, poseSheet, RIDE_HALF, rideSheet } from '../../avatar3d/baker';
 import { rideFallback } from '../../avatar3d/bakeGuard';
 import { recordError } from '../../core/errorLog';
 import { Icon } from '../kitIcons';
@@ -90,9 +90,14 @@ function useSheet(key: string | null, make: () => Promise<string>, onFail?: (e: 
   return key === null ? { uri: null, failed: false } : state;
 }
 
-export function useAvatarSheet(cfg: AvatarConfig): string | null {
-  const key = `a:${JSON.stringify(cfg)}`;
+export function useAvatarSheet(cfg: AvatarConfig, enabled = true): string | null {
+  const key = enabled ? `a:${JSON.stringify(cfg)}` : null;
   return useSheet(key, () => avatarSheet(cfg)).uri;
+}
+
+export function usePoseSheet(cfg: AvatarConfig): string | null {
+  const key = `g:${JSON.stringify(cfg)}`;
+  return useSheet(key, () => poseSheet(cfg)).uri;
 }
 
 /** The avatar on their vehicle; only baked once `enabled` (i.e. the friend is actually driving). A ride whose bake failed rides the default model. */
@@ -145,6 +150,7 @@ export class SpriteBoundary extends Component<{ size: number; children: ReactNod
 
 /** Ride cells are framed wider than avatar cells (baker RIDE_HALF), so they are drawn larger to keep world scale. */
 const RIDE_SCALE = RIDE_HALF / AVATAR_HALF;
+const POSE_SCALE = POSE_HALF / AVATAR_HALF;
 /** Ms per sheet column while turning: a 180° turn sweeps 8 frames in ~0.3 s instead of snapping. */
 const TURN_STEP_MS = 38;
 
@@ -181,13 +187,13 @@ function useTurningColumn(target: number): number {
  * heading relative to the map bearing. Bounces when a new position arrives (Snapchat-Map energy) and briefly bobs
  * while idle. The soft contact shadow and outline are baked into the sheet.
  */
-export function MapSprite(props: Parameters<typeof MapSpriteInner>[0]) {
+export const MapSprite = memo(function MapSprite(props: Parameters<typeof MapSpriteInner>[0]) {
   return (
     <SpriteBoundary size={props.size ?? 64}>
       <MapSpriteInner {...props} />
     </SpriteBoundary>
   );
-}
+});
 
 function MapSpriteInner({
   avatar,
@@ -208,7 +214,7 @@ function MapSpriteInner({
   size?: number;
   bumpKey?: number;
 }) {
-  const aUri = useAvatarSheet(avatar);
+  const aUri = useAvatarSheet(avatar, !driving);
   const rUri = useRideSheet(avatar, car, driving);
   const [step, setStep] = useState(0);
   const scale = useSharedValue(1);
@@ -247,13 +253,13 @@ function MapSpriteInner({
 }
 
 /** The parked car (D67): the user's own vehicle without the rider, frozen at the heading it stopped with. */
-export function ParkedSprite({ car, heading, bearing, size = 48 }: { car: CarConfig; heading: number | null; bearing: number; size?: number }) {
+export const ParkedSprite = memo(function ParkedSprite({ car, heading, bearing, size = 48 }: { car: CarConfig; heading: number | null; bearing: number; size?: number }) {
   return (
     <SpriteBoundary size={size} fallback={<View style={{ width: size, height: size }} />}>
       <ParkedSpriteInner car={car} heading={heading} bearing={bearing} size={size} />
     </SpriteBoundary>
   );
-}
+});
 
 function ParkedSpriteInner({ car, heading, bearing, size }: { car: CarConfig; heading: number | null; bearing: number; size: number }) {
   const ride = rideFallback(car, failedRides);
@@ -267,32 +273,68 @@ function ParkedSpriteInner({ car, heading, bearing, size }: { car: CarConfig; he
   return uri ? <Cell uri={uri} col={headingFrame(heading, bearing)} row={0} rows={1} size={size * RIDE_SCALE} /> : <View style={{ width: size, height: size }} />;
 }
 
-/** One frozen cell of a person's existing walk sheet (group scenes): no animation, no extra bake. */
-export function PosedSprite({ avatar, frame, heading, size }: { avatar: AvatarConfig; frame: number; heading: number; size: number }) {
+/** Expressive 3D action pose cell for crew freeze-frame scenes (falls back to walk sheet while pose sheet bakes). */
+export const PosedSprite = memo(function PosedSprite({
+  avatar,
+  frame,
+  action,
+  heading,
+  size,
+}: {
+  avatar: AvatarConfig;
+  frame: number;
+  action?: number;
+  heading: number;
+  size: number;
+}) {
   return (
     <SpriteBoundary size={size}>
-      <PosedSpriteInner avatar={avatar} frame={frame} heading={heading} size={size} />
+      <PosedSpriteInner avatar={avatar} frame={frame} action={action} heading={heading} size={size} />
     </SpriteBoundary>
   );
-}
+});
 
-function PosedSpriteInner({ avatar, frame, heading, size }: { avatar: AvatarConfig; frame: number; heading: number; size: number }) {
-  const uri = useAvatarSheet(avatar);
-  return uri ? (
-    <Cell uri={uri} col={heading % SPRITE_HEADINGS} row={Math.min(AVATAR_FRAMES - 1, frame)} rows={AVATAR_FRAMES} size={size} />
+function PosedSpriteInner({
+  avatar,
+  frame,
+  action,
+  heading,
+  size,
+}: {
+  avatar: AvatarConfig;
+  frame: number;
+  action?: number;
+  heading: number;
+  size: number;
+}) {
+  const poseUri = usePoseSheet(avatar);
+  const walkUri = useAvatarSheet(avatar, !poseUri);
+  if (poseUri && action !== undefined) {
+    return (
+      <Cell
+        uri={poseUri}
+        col={heading % SPRITE_HEADINGS}
+        row={Math.min(POSE_SHEET_FRAMES - 1, Math.max(0, action))}
+        rows={POSE_SHEET_FRAMES}
+        size={Math.round(size * POSE_SCALE)}
+      />
+    );
+  }
+  return walkUri ? (
+    <Cell uri={walkUri} col={heading % SPRITE_HEADINGS} row={Math.min(AVATAR_FRAMES - 1, frame)} rows={AVATAR_FRAMES} size={size} />
   ) : (
     <View style={{ width: size, height: size }} />
   );
 }
 
 /** Front-facing still for lists and sheets. */
-export function AvatarStill({ avatar, size = 48 }: { avatar: AvatarConfig; size?: number }) {
+export const AvatarStill = memo(function AvatarStill({ avatar, size = 48 }: { avatar: AvatarConfig; size?: number }) {
   return (
     <SpriteBoundary size={size}>
       <AvatarStillInner avatar={avatar} size={size} />
     </SpriteBoundary>
   );
-}
+});
 
 function AvatarStillInner({ avatar, size }: { avatar: AvatarConfig; size: number }) {
   // A dedicated 1-cell portrait (heading 180°, facing the camera): lists never decode the full walk sheet.

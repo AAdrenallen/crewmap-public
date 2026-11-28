@@ -174,6 +174,7 @@ export interface PowerService {
 export interface ScreenService {
   current(): { interactive: boolean; locked: boolean };
   onChange(cb: (e: { kind: 'screenOn' | 'screenOff' | 'unlocked'; t: number }) => void): () => void;
+  setKeepAwake(on: boolean): void;
 }
 
 // --- Deferred: health data + Bluetooth LE (contracts only) -------------------------------------------------------------
@@ -284,6 +285,15 @@ export type MediaAction = 'play' | 'pause' | 'toggle' | 'next' | 'previous' | 'n
 /** 'split' = opened beside CrewMap; 'app' = opened full screen (overlay bubble shown if permitted); 'none' = nothing to open. */
 export type MediaOpenResult = 'split' | 'app' | 'none';
 
+export interface MediaBrowseItem {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  art: string | null;
+  kind: 'queue' | 'media' | 'folder' | 'search';
+  browsable: boolean;
+}
+
 export interface MediaService {
   /** Reading sessions needs Notification Access (the same grant as externalNavStatus). */
   hasAccess(): boolean;
@@ -297,6 +307,10 @@ export interface MediaService {
   onChange(cb: (np: NowPlaying | null) => void): () => void;
   /** False when the session is gone or the action isn't exposed: open the app instead. */
   control(action: MediaAction): boolean;
+  /** Browse playlists / folders (MediaBrowserService) and active queue items for `pkg`. */
+  browse(pkg?: string | null, parentId?: string | null): Promise<MediaBrowseItem[]>;
+  /** Play a browsed item (`queue` id, `media` id, or `search` playlist query) or open the player (`open`). */
+  playItem(pkg: string | null, kind: 'queue' | 'media' | 'search' | 'open', id: string): boolean;
   /** Opens `pkg` (default: preferred → active session → first installed) beside CrewMap in multi-window. */
   openSplit(pkg?: string): Promise<MediaOpenResult>;
 }

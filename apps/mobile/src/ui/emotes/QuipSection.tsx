@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { TipBanner } from '../shell/TipBanner';
@@ -156,11 +156,16 @@ export function QuipSection({ friendId, friendName, disabled }: { friendId: stri
 }
 
 function ThumbOf({ hash }: { hash: { h: string } }) {
-  const [uri, setUri] = useState<string | null>(null);
-  if (uri === null) {
-    void blobUri({ h: hash.h, n: 0, mime: '' }, false).then((u) => setUri(u ?? ''));
-    return <View style={styles.thumb} />;
-  }
+  const [uri, setUri] = useState<string>('');
+  useEffect(() => {
+    let live = true;
+    void blobUri({ h: hash.h, n: 0, mime: '' }, false).then((u) => {
+      if (live) setUri(u ?? '');
+    });
+    return () => {
+      live = false;
+    };
+  }, [hash.h]);
   return uri ? <Image source={{ uri }} style={styles.thumb} contentFit="cover" /> : <View style={styles.thumb} />;
 }
 

@@ -1,7 +1,8 @@
 import { TipBanner } from '../ui/shell/TipBanner';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useBackClose } from '../ui/useBackClose';
 import { CONVOY, convoyCrew, convoyLeader, driveAlongScreenState, groupRows, roughEtaMs, type GroupDest } from '@crewmap/shared/companions';
 import { lang, t } from '@crewmap/shared/i18n';
 import { formatClock, formatDistance, formatMinutes } from '@crewmap/shared/units';
@@ -19,6 +20,8 @@ import { type, useTheme } from '../ui/theme';
  */
 export default function DriveAlongScreen() {
   const router = useRouter();
+  const close = useCallback(() => (router.canGoBack() ? router.back() : router.replace('/')), [router]);
+  useBackClose(close);
   const th = useTheme();
   const lay = useLayoutMode();
   const p = useLocalSearchParams<{ crew?: string; name?: string; lat?: string; lng?: string; with?: string }>();

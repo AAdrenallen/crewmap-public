@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatNotif, expireBlips, inAppBlipPolicy, notifIdFor, pushBlip, visibleBlips, type Blip } from './messaging';
+import { blipPreview, chatNotif, expireBlips, inAppBlipPolicy, notifIdFor, pushBlip, visibleBlips, type Blip } from './messaging';
 
 const base = { viewing: false, muted: false };
 
@@ -7,9 +7,9 @@ describe('inAppBlipPolicy', () => {
   it('browse shows a bubble for every kind', () => {
     for (const kind of ['chat1', 'chatCrew', 'quip', 'emote'] as const) expect(inAppBlipPolicy({ ...base, ctx: 'browse', kind })).toBe('bubble');
   });
-  it('moving: tiny for 1:1 only', () => {
+  it('moving: tiny for chat, silent for quips and emotes', () => {
     expect(inAppBlipPolicy({ ...base, ctx: 'driveMoving', kind: 'chat1' })).toBe('tiny');
-    expect(inAppBlipPolicy({ ...base, ctx: 'driveMoving', kind: 'chatCrew' })).toBe('silent');
+    expect(inAppBlipPolicy({ ...base, ctx: 'driveMoving', kind: 'chatCrew' })).toBe('tiny');
     expect(inAppBlipPolicy({ ...base, ctx: 'driveMoving', kind: 'quip' })).toBe('silent');
     expect(inAppBlipPolicy({ ...base, ctx: 'driveMoving', kind: 'emote' })).toBe('silent');
   });
@@ -40,6 +40,13 @@ describe('blip stack', () => {
     expect(visibleBlips(l)).toMatchObject({ more: 2 });
     expect(visibleBlips(l).shown.map((x) => x.id)).toEqual(['e', 'd', 'c']);
     expect(expireBlips(l, 5500).map((x) => x.id)).toEqual(['e', 'd', 'c', 'b']);
+  });
+  it('trims a short message preview and keeps the newest snippet on the blip', () => {
+    expect(blipPreview('   On   my   way  now!  ')).toBe('On my way now!');
+    expect(blipPreview('one two three four five six seven eight nine')).toBe('one two three four five six…');
+    let l = pushBlip([], { ...b('a', 100), preview: 'First msg' });
+    l = pushBlip(l, { ...b('a', 200), preview: 'Latest update' });
+    expect(l[0]?.preview).toBe('Latest update');
   });
 });
 

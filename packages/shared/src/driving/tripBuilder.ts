@@ -76,7 +76,11 @@ export class DrivingPipeline {
 
   private buffer<T extends { t: number }>(arr: T[], v: T): void {
     arr.push(v);
-    while (arr.length > 0 && v.t - arr[0]!.t > 90_000) arr.shift();
+    if (arr.length > 64 && v.t - arr[0]!.t > 90_000) {
+      let cut = 0;
+      while (cut < arr.length && v.t - arr[cut]!.t > 90_000) cut++;
+      if (cut >= 32) arr.splice(0, cut);
+    }
   }
 
   private handle(evs: ReturnType<TripDetector['onLocation']>): Trip[] {
@@ -92,9 +96,11 @@ export class DrivingPipeline {
           const touches = this.pendingTouches.filter((x) => x.t >= ev.startedAt);
           this.pendingImu = [];
           this.pendingTouches = [];
+          let ii = 0;
+          let ti = 0;
           for (const p of ev.points) {
-            while (imu.length && imu[0]!.t <= p.t) this.events.onImu(imu.shift()!);
-            while (touches.length && touches[0]!.t <= p.t) this.events.onInteraction(touches.shift()!);
+            while (ii < imu.length && imu[ii]!.t <= p.t) this.events.onImu(imu[ii++]!);
+            while (ti < touches.length && touches[ti]!.t <= p.t) this.events.onInteraction(touches[ti++]!);
             this.emitEvents(this.events.onPoint(p));
             this.listener.onPoint?.(p);
           }

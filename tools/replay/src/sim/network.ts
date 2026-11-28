@@ -207,8 +207,9 @@ export class SimDirect implements DirectLinks {
     const s = signal as { type: string };
     if (s.type === 'offer') {
       if (this.net.canConnect(this.self, peer)) {
-        this.open.add(peer);
+        // Send answer over Nostr before marking the channel open so the initiator receives it.
         this.signalHandler(peer, { type: 'answer', from: this.self });
+        this.open.add(peer);
       }
     } else if (s.type === 'answer') {
       if (this.net.canConnect(this.self, peer)) this.open.add(peer);

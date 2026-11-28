@@ -4,11 +4,12 @@ import { WIKI_LICENCE } from '@crewmap/hazards';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { haversineM } from '@crewmap/shared/geo';
 import { lang, t } from '@crewmap/shared/i18n';
-import { formatDistance, formatMinutes } from '@crewmap/shared/units';
+import { formatClock, formatDistance, formatMinutes } from '@crewmap/shared/units';
 import { engine } from '../../core/engine';
 import { matrixFrom } from '../../core/mapbox';
 import { useWikiSummary } from '../../core/placeInfo';
 import { useApp } from '../../core/store';
+import { computeTripInsight, type DoorToDoorInsight } from '../../core/tripInsights';
 import { useBackClose } from '../../ui/useBackClose';
 import { Button, Card, H, SectionLabel, T } from '../../ui/kit';
 import { PlaceShareChips } from '../../ui/PlaceShareChips';
@@ -26,7 +27,9 @@ export default function PlaceSheet() {
   const mine = useApp((s) => !!p && p.owner === s.me?.deviceId);
   const owner = useApp((s) => (p ? s.friends[p.owner]?.profile.name : undefined));
   const fix = useApp((s) => s.fix);
+  const places = useApp((s) => s.places);
   const [etaS, setEtaS] = useState<number | null>(null);
+  const [insight, setInsight] = useState<DoorToDoorInsight | null>(null);
   const wikiInfo = useWikiSummary(p);
   const hasFix = !!fix;
   useEffect(() => {
@@ -37,10 +40,14 @@ export default function PlaceSheet() {
       (m) => live && setEtaS(m.durationS[0] ?? null),
       () => undefined,
     );
+    computeTripInsight(f, p, places).then(
+      (res) => live && setInsight(res),
+      () => undefined,
+    );
     return () => {
       live = false;
     };
-  }, [p?.id, p?.lat, p?.lng, hasFix]);
+  }, [p?.id, p?.lat, p?.lng, hasFix, places]);
   if (!p) return null;
   const meta = [t(`placeType.${p.type}`), !mine ? owner : null, fix ? formatDistance(haversineM(fix, p), lang()) : null, etaS !== null ? formatMinutes(etaS) : null].filter(Boolean).join(' · ');
   return (
@@ -53,6 +60,18 @@ export default function PlaceSheet() {
             <T soft numberOfLines={1}>{meta}</T>
           </View>
         </View>
+        {insight && (
+          <View testID="place-insight" style={{ gap: 2 }}>
+            <T soft style={{ fontSize: 13 }}>
+              {t('insight.typicalDrive', { min: Math.max(1, Math.round(insight.typicalS / 60)), n: insight.trips })}
+            </T>
+            {insight.advice && (
+              <T soft style={{ fontSize: 13 }}>
+                {t('insight.leaveBy', { arrive: formatClock(insight.arriveAt), leave: formatClock(insight.advice.leaveAt) })}
+              </T>
+            )}
+          </View>
+        )}
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Button testID="place-navigate" label={t('places.navigate')} onPress={() => router.replace({ pathname: '/route', params: { name: p.name, lat: String(p.lat), lng: String(p.lng) } })} />

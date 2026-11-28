@@ -1,6 +1,6 @@
 import Svg, { Path } from 'react-native-svg';
 
-export type MusicGlyph = 'play' | 'pause' | 'next' | 'prev' | 'note';
+export type MusicGlyph = 'play' | 'pause' | 'next' | 'prev' | 'note' | 'list' | 'close';
 
 const D: Record<MusicGlyph, string> = {
   play: 'M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z',
@@ -8,6 +8,8 @@ const D: Record<MusicGlyph, string> = {
   next: 'M5 6.2v11.6a.8.8 0 0 0 1.2.7L15 13v4.5a.5.5 0 0 0 .5.5h2a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 0-.5.5V11L6.2 5.5a.8.8 0 0 0-1.2.7z',
   prev: 'M19 6.2v11.6a.8.8 0 0 1-1.2.7L9 13v4.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5V11l8.8-5.5a.8.8 0 0 1 1.2.7z',
   note: 'M9 18.5a3 3 0 1 1-2-2.83V5.6a1 1 0 0 1 .76-.97l10-2.5A1 1 0 0 1 19 3.1v12.4a3 3 0 1 1-2-2.83V6.3l-8 2v10.2z',
+  list: 'M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h10v2H4v-2zm13-1v6l5-3-5-3z',
+  close: 'M6.4 5L5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12 19 6.4 17.6 5 12 10.6 6.4 5z',
 };
 
 /** Filled transport glyphs for the driving music controls. */

@@ -73,7 +73,7 @@ describe('route result cache and discovery mode', () => {
     expect(discoveryMode({ from, to, lastFullAt: T0 - 3600_000, now: T0, budget: 'ok' })).toBe('warm');
     expect(discoveryMode({ from, to, lastFullAt: T0 - ROUTE_CACHE.fullEveryMs - 1, now: T0, budget: 'ok' })).toBe('full');
     expect(discoveryMode({ from, to, lastFullAt: null, now: T0, budget: 'lean' })).toBe('lean');
-    expect(discoveryMode({ from, to: P(2000, 0), lastFullAt: null, now: T0, budget: 'ok' })).toBe('lean');
+    expect(discoveryMode({ from, to: P(800, 0), lastFullAt: null, now: T0, budget: 'ok' })).toBe('lean');
   });
 });
 

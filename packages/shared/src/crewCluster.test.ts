@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CLUSTER, boundsOf, clusterByPixels, clusterTap, fitZoom, isSameSpot, spreadM } from './crewCluster';
-import { POSE_MAX, POSE_MIN, pickGroupPose, posesFor } from './groupPoses';
+import { CLUSTER, boundsOf, clusterByPixels, clusterCrew, clusterTap, fitZoom, isSameSpot, spreadM } from './crewCluster';
+import { POSE_ACTIONS, POSE_MAX, POSE_MIN, pickGroupPose, posesFor } from './groupPoses';
 
 // Public landmark: around the Eiffel Tower.
 const P = { lat: 48.8584, lng: 2.2945 };
@@ -22,6 +22,14 @@ describe('clusterByPixels', () => {
   });
   it('splits when far apart', () => {
     expect(clusterByPixels([{ id: 'a', x: 0, y: 0 }, { id: 'b', x: 100, y: 0 }], 52)).toEqual([['a'], ['b']]);
+  });
+  it('clusterCrew keeps same-spot crewmates together even when zoomed in past pixel overlap', () => {
+    const g = clusterCrew([
+      { id: 'a', x: 50, y: 200, lat: P.lat, lng: P.lng },
+      { id: 'b', x: 260, y: 200, lat: P.lat + 0.0002, lng: P.lng }, // ~22 m apart
+      { id: 'c', x: 350, y: 500, lat: P.lat + 0.01, lng: P.lng },
+    ]);
+    expect(g).toEqual([['a', 'b'], ['c']]);
   });
 });
 
@@ -57,31 +65,47 @@ describe('clusterTap', () => {
 });
 
 describe('group poses', () => {
-  it('offers 100+ distinct compositions for every count 2..8', () => {
+  it('offers 500+ distinct non-stacking compositions for every count 2..8', () => {
     for (let n = POSE_MIN; n <= POSE_MAX; n++) {
       const list = posesFor(n);
-      expect(list.length).toBeGreaterThanOrEqual(100);
+      expect(list.length).toBeGreaterThanOrEqual(500);
       expect(new Set(list.map((p) => JSON.stringify(p.slots))).size).toBe(list.length);
       expect(new Set(list.map((p) => p.name)).size).toBe(list.length);
+      let minPairDist = Infinity;
+      let validSlots = true;
       for (const p of list) {
-        expect(p.slots).toHaveLength(n);
-        for (const s of p.slots) {
-          expect([0, 1, 2]).toContain(s.frame);
-          expect(s.heading).toBeGreaterThanOrEqual(0);
-          expect(s.heading).toBeLessThan(16);
-          expect(Math.abs(s.x)).toBeLessThanOrEqual(1);
-          expect(Math.abs(s.y)).toBeLessThanOrEqual(1);
+        if (p.slots.length !== n) validSlots = false;
+        for (let i = 0; i < p.slots.length; i++) {
+          const s = p.slots[i]!;
+          if (
+            (s.frame !== 0 && s.frame !== 1 && s.frame !== 2) ||
+            s.action < 0 ||
+            s.action >= POSE_ACTIONS ||
+            s.heading < 0 ||
+            s.heading >= 16 ||
+            Math.abs(s.x) > 1 ||
+            Math.abs(s.y) > 1
+          ) {
+            validSlots = false;
+          }
+          for (let j = i + 1; j < p.slots.length; j++) {
+            const o = p.slots[j]!;
+            const d = Math.hypot(s.x - o.x, s.y - o.y);
+            if (d < minPairDist) minPairDist = d;
+          }
         }
       }
+      expect(validSlots).toBe(true);
+      expect(minPairDist).toBeGreaterThan(0.15);
     }
   });
-  it('selection is stable and order-independent', () => {
-    const a = pickGroupPose(['zed', 'amy', 'bo']);
-    const b = pickGroupPose(['bo', 'zed', 'amy']);
+  it('selection is order-independent and rotates cleanly across open seeds', () => {
+    const a = pickGroupPose(['zed', 'amy', 'bo'], 7);
+    const b = pickGroupPose(['bo', 'zed', 'amy'], 7);
     expect(a).toEqual(b);
     expect([...a.members].sort()).toEqual(['amy', 'bo', 'zed']);
     expect(a.pose.slots).toHaveLength(3);
-    const names = new Set(Array.from({ length: 40 }, (_, i) => pickGroupPose([`u${i}`, `v${i}`]).pose.name));
-    expect(names.size).toBeGreaterThan(10);
+    const acrossSeeds = new Set(Array.from({ length: 30 }, (_, s) => pickGroupPose(['amy', 'bo'], s + 1).pose.name));
+    expect(acrossSeeds.size).toBeGreaterThan(15);
   });
 });

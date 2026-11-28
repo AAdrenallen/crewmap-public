@@ -67,12 +67,15 @@ export function mergeHazards(all: Hazard[], now: number): MergedHazard[] {
     seenIds.add(h.id);
     if (shadowed.has(h.id)) continue;
     const fam = TYPE_FAMILY[h.type];
+    const maxR = RADIUS_M[fam]! + (h.uncertaintyM ?? 0);
     const i = clusters.findIndex(
       (m) =>
         TYPE_FAMILY[m.type] === fam &&
-        haversineM(m, h) <= RADIUS_M[fam]! + (h.uncertaintyM ?? 0) &&
+        Math.abs(m.lat - h.lat) <= 0.01 &&
+        Math.abs(m.lng - h.lng) <= 0.015 &&
         Math.abs(m.latestReportAt - h.reportedAt) <= WINDOW_MS[fam]! &&
-        headingsCompatible(m.heading, h.heading),
+        headingsCompatible(m.heading, h.heading) &&
+        haversineM(m, h) <= maxR,
     );
     const c = clusters[i];
     if (c) {

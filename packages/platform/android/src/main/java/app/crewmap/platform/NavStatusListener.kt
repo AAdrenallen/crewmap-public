@@ -34,6 +34,11 @@ class NavStatusListener : NotificationListenerService() {
     val app = appOf(sbn) ?: return
     val n = sbn.notification ?: return
     if (!isNavigation(n)) return
+    // Ignore dismissal of a secondary service notification while another active nav notification for this app remains.
+    val stillActive = runCatching {
+      activeNotifications?.any { it.key != sbn.key && appOf(it) == app && it.notification?.let(::isNavigation) == true } == true
+    }.getOrDefault(false)
+    if (stillActive) return
     CrewmapBus.emit("onExternalNavEnded", Bundle().apply {
       putString("app", app)
       putDouble("t", System.currentTimeMillis().toDouble())

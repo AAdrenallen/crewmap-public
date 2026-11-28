@@ -126,11 +126,18 @@ export class Network {
       markOnline();
     });
     await this.sync.start();
+    let lastEpoch = st.epoch;
+    let lastMembers = st.members.size;
     this.offs.push(
       this.presenceBook.on(() => this.onFriends()),
       this.doc.onChange(() => this.onFriends()),
       this.circle.onChange(() => {
-        if (this.circle.state) router.resubscribe(Math.floor(Date.now() / 1000) - 600);
+        const cur = this.circle.state;
+        if (cur && (cur.epoch !== lastEpoch || cur.members.size !== lastMembers)) {
+          lastEpoch = cur.epoch;
+          lastMembers = cur.members.size;
+          router.resubscribe(Math.floor(Date.now() / 1000) - 600);
+        }
         this.onFriends();
       }),
       platform.wake.onPing(() => void this.catchUp()),
@@ -169,6 +176,7 @@ export class Network {
 
   applyTransportSettings(): void {
     const s = useApp.getState().settings;
+    this.router?.setPcRelays(s.pcRelayUrl ? [s.pcRelayUrl] : []);
     this.router?.setConfig(s.transport);
   }
 

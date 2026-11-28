@@ -109,7 +109,7 @@ export class Navigator {
   constructor(private readonly tracking: Tracking) {}
 
   /** Route preview: every commonly-driven viable route (recursive alternatives + learned + cached vias), recommended first. */
-  async preview(dest: { name: string; lat: number; lng: number }): Promise<RouteCandidate[]> {
+  async preview(dest: { name: string; lat: number; lng: number }, customOrigin?: { name: string; lat: number; lng: number } | null): Promise<RouteCandidate[]> {
     await refreshVoices();
     const want = useApp.getState().settings.voiceLang ?? useApp.getState().settings.lang;
     // Offer the system voice download once, while still parked at route preview.
@@ -117,18 +117,32 @@ export class Navigator {
       await db.kvSet(`voiceAsked:${want}`, true);
       void platform.audio.installVoice();
     }
-    const fix = useApp.getState().fix ?? (await platform.location.current());
-    if (!fix) throw new Error('no location');
+    let liveFix = useApp.getState().fix;
+    // Refresh stale or coarse GPS fixes when starting from current location so an old fix at a prior stop never flips origin/direction.
+    if (!customOrigin && (!liveFix || Date.now() - liveFix.t > 15_000 || liveFix.accuracy > 80)) {
+      const fresh = await Promise.race([
+        platform.location.current(),
+        new Promise<null>((r) => setTimeout(() => r(null), 2500)),
+      ]);
+      if (fresh) {
+        liveFix = fresh;
+        useApp.getState().set({ fix: fresh });
+      }
+    }
+    const origin = customOrigin ?? liveFix ?? (await platform.location.current());
+    if (!origin) throw new Error('no location');
+    // Only apply departure bearing when actively moving on live GPS (parked/driveway headings often point 180° opposite).
+    const originHeading = !customOrigin && liveFix && (liveFix.speed ?? 0) >= 1.5 ? liveFix.heading : null;
     const now = Date.now();
     const exclude = excludeList(await loadRouteOptions());
     const lang = voiceLang();
     // Vias and learned routes were found without restrictions; with an exclusion they could cross the avoided roads.
-    const cacheKey = `routeVias:${odKey(fix, dest)}${exclude.length ? `:${exclude.join('+')}` : ''}`;
+    const cacheKey = `routeVias:${odKey(origin, dest)}${exclude.length ? `:${exclude.join('+')}` : ''}`;
     const [traces, cachedVias, samples] = await Promise.all([db.routeTraces(), db.kvGet<Via[]>(cacheKey, []), db.kvGet<DriveSample[]>(DRIVE_SAMPLES_KEY, [])]);
     const crew = crewBiases();
-    const learned = exclude.length ? [] : learnedRoutes(traces, fix, dest, now);
+    const learned = exclude.length ? [] : learnedRoutes(traces, origin, dest, now);
     // Same O/D, options and language a few minutes ago: same routes, re-ranked with the current hazards (0 calls).
-    const resultKey = routeCacheKey(fix, dest, exclude, lang);
+    const resultKey = routeCacheKey(origin, dest, exclude, lang);
     const cached = routeResults.get(resultKey, now);
     let candidates: RouteCandidate[];
     if (cached) {
@@ -136,10 +150,10 @@ export class Navigator {
       candidates = recommend(cached.candidates, { learned, samples, now, traces, crew, hazardCostS: hazardCost });
     } else {
       // A full discovery per O/D and period (peak / other) once a week; then the kept corridors are re-asked (D60).
-      const fullKey = `routeFull:${odKey(fix, dest)}:${periodOf(timeBucket(now))}${exclude.length ? `:${exclude.join('+')}` : ''}`;
-      const mode = discoveryMode({ from: fix, to: dest, lastFullAt: await db.kvGet<number | null>(fullKey, null), now, budget: budgetLevel('directions') });
+      const fullKey = `routeFull:${odKey(origin, dest)}:${periodOf(timeBucket(now))}${exclude.length ? `:${exclude.join('+')}` : ''}`;
+      const mode = discoveryMode({ from: origin, to: dest, lastFullAt: await db.kvGet<number | null>(fullKey, null), now, budget: budgetLevel('directions') });
       const res = await discoverRoutes(
-        { from: fix, to: dest, heading: fix.heading, learned, cachedVias, samples, now, exclude, hazardCostS: hazardCost, traces, crew, mode },
+        { from: origin, to: dest, heading: originHeading, learned, cachedVias, samples, now, exclude, hazardCostS: hazardCost, traces, crew, mode },
         (q) => directionsQuery(q, lang),
         snapToRoads,
       );
@@ -152,7 +166,7 @@ export class Navigator {
     }
     const first = candidates[0];
     if (!first) throw new Error('no route');
-    void db.kvSet(LAST_PREVIEW_KEY, previewRecord(candidates, fix, dest, now));
+    void db.kvSet(LAST_PREVIEW_KEY, previewRecord(candidates, origin, dest, now));
     useApp.getState().set({ nav: { route: first.route, candidates, destination: dest, progress: null, active: false, rerouting: false } });
     return candidates;
   }
@@ -194,7 +208,11 @@ export class Navigator {
     });
   }
 
+  private arrivalTimer: ReturnType<typeof setTimeout> | null = null;
+
   end(): void {
+    if (this.arrivalTimer) clearTimeout(this.arrivalTimer);
+    this.arrivalTimer = null;
     this.unsub?.();
     this.unsub = null;
     this.progress = null;
@@ -249,11 +267,12 @@ export class Navigator {
     this.reeval = { ...this.reeval, lastCheckAt: now, checks: this.reeval.checks + 1 };
     try {
       const exclude = excludeList(getRouteOptions());
-      const fresh = await directions(fix, nav.destination, fix.heading, voiceLang(), exclude);
+      const movHeading = (fix.speed ?? 0) >= 1.5 ? fix.heading : null;
+      const fresh = await directions(fix, nav.destination, movHeading, voiceLang(), exclude);
       const rest = remainingLine(route, p.alongM);
       let current = matchCurrent(fresh, rest);
       if (!current) {
-        const q = currentRouteQuery([{ lat: fix.lat, lng: fix.lng }, ...rest.slice(1)], fix.heading, exclude);
+        const q = currentRouteQuery([{ lat: fix.lat, lng: fix.lng }, ...rest.slice(1)], movHeading, exclude);
         current = q ? ((await directionsQuery(q, voiceLang()))[0] ?? null) : null;
       }
       if (!current || useApp.getState().nav?.route !== route) return;
@@ -271,11 +290,11 @@ export class Navigator {
     }
   }
 
-  /** A new accident / closure / jam ahead on the corridor triggers an early check. */
+  /** A new accident / closure / jam ahead on the corridor triggers an early check (reuses `this.onRoute`). */
   private corridorTrigger(): void {
     const along = useApp.getState().nav?.progress?.alongM ?? 0;
     let fresh = false;
-    for (const h of hazardsOnRoute(useApp.getState().nav!.route, useApp.getState().hazards)) {
+    for (const h of this.onRoute) {
       if (h.alongM <= along || !['accident', 'closure', 'jam'].includes(h.hazard.type) || h.hazard.level === 'low') continue;
       if (!this.corridorIds.has(h.hazard.id)) {
         this.corridorIds.add(h.hazard.id);
@@ -332,14 +351,18 @@ export class Navigator {
     if (bw) say(tIn(vl, bw.minutes > 0 ? 'border.wait' : 'border.none', { name: bw.office, min: bw.minutes }), 'alert', [bw.office]);
     if (p.arrived) {
       say(tIn(vl, 'nav.arrived'), 'guidance');
-      setTimeout(() => this.end(), 8000);
+      if (this.arrivalTimer) clearTimeout(this.arrivalTimer);
+      this.arrivalTimer = setTimeout(() => {
+        this.arrivalTimer = null;
+        this.end();
+      }, 8000);
       return;
     }
     if (p.shouldReroute) {
       this.progress.markRerouted(fix.t);
       useApp.getState().set({ nav: { ...useApp.getState().nav!, rerouting: true } });
       try {
-        const routes = await directions(fix, nav.destination, fix.heading, voiceLang(), excludeList(getRouteOptions()));
+        const routes = await directions(fix, nav.destination, (fix.speed ?? 0) >= 1.5 ? fix.heading : null, voiceLang(), excludeList(getRouteOptions()));
         // Same ranking as the preview and the re-evaluation (no extra calls): not just Directions' first answer.
         const label = { kind: 'letter', letter: '' } as const;
         const best = recommend(

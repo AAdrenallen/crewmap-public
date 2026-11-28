@@ -28,24 +28,28 @@ import {
   type NoticeAction,
 } from './driveUx';
 
-/** Moving / stopped with hysteresis; re-renders only when the state flips. */
+/** Moving / stopped with hysteresis; subscribes only to the 3 speed bands so components never re-render at 1 Hz. */
 export function useMotion(): Motion {
-  const v = useApp((s) => Math.round(kph(s.fix?.speed ?? null) ?? 0));
+  const band = useApp((s) => {
+    const v = kph(s.fix?.speed ?? null) ?? 0;
+    return v >= DRIVE_UX.movingKph ? 2 : v >= DRIVE_UX.stoppedKph ? 1 : 0;
+  });
   const [motion, setMotion] = useState<Motion>('stopped');
   const below = useRef<number | null>(null);
   useEffect(() => {
     const now = Date.now();
-    if (v >= DRIVE_UX.stoppedKph) below.current = null;
+    const repV = band === 2 ? DRIVE_UX.movingKph : band === 1 ? DRIVE_UX.stoppedKph : 0;
+    if (band >= 1) below.current = null;
     else below.current ??= now;
-    setMotion((m) => nextMotion(m, v, below.current, now));
+    setMotion((m) => nextMotion(m, repV, below.current, now));
     // A stop is only confirmed after the hold, even if no new fix arrives.
     if (below.current === null) return;
     const timer = setTimeout(
-      () => setMotion((m) => nextMotion(m, v, below.current, Date.now())),
+      () => setMotion((m) => nextMotion(m, 0, below.current, Date.now())),
       DRIVE_UX.stopHoldMs + 50,
     );
     return () => clearTimeout(timer);
-  }, [v]);
+  }, [band]);
   return motion;
 }
 
@@ -69,12 +73,12 @@ export function useMomentNotice(ctx: FriendContext): {
   dismiss: () => void;
 } {
   const moments = useApp((s) => s.moments);
-  const next = useApp((s) => s.nav?.progress?.next?.distanceM ?? null);
   const meId = useApp((s) => s.me?.deviceId ?? null);
   const handled = useRef(new WeakSet<ProximityMoment>());
   const [cur, setCur] = useState<{ m: ProximityMoment; action: NoticeAction } | null>(null);
   const [deferred, setDeferred] = useState<ProximityMoment[]>([]);
   useEffect(() => {
+    const next = useApp.getState().nav?.progress?.next?.distanceM ?? null;
     for (const m of moments) {
       if (handled.current.has(m)) continue;
       handled.current.add(m);
@@ -93,6 +97,7 @@ export function useMomentNotice(ctx: FriendContext): {
     setDeferred([]);
     const m = fresh[fresh.length - 1];
     if (!m) return;
+    const next = useApp.getState().nav?.progress?.next?.distanceM ?? null;
     const action = noticePolicy(momentNotice(m, meId).kind, ctx, next);
     if (action === 'toast' || action === 'pill') setCur({ m, action });
   }, [ctx]);
@@ -313,6 +318,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(17,22,36,0.92)',
   },
   streakText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  potholeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(17,22,36,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,200,69,0.45)',
+  },
   detailsBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
 });
 
@@ -361,30 +377,58 @@ export function FasterOffer({ motion }: { motion: Motion }) {
   );
 }
 
-/** Calm trip-end card ("smooth drive") after a clean driver trip; never while guiding near a turn, gone in 6 s. */
+/** Calm trip-end card ("smooth drive" + optional 1-tap pothole report from D63 roughness) after a driver trip. */
 export function TripEndCard() {
   const last = useApp((s) => s.lastTripEnd);
   const navigating = useApp((s) => s.nav?.active === true);
   const [shown, setShown] = useState<string | null>(null);
+  const [roughDismissed, setRoughDismissed] = useState<string | null>(null);
   const min = last ? smoothStreakMin(last) : null;
-  const fresh =
-    last !== null && min !== null && !navigating && Date.now() - last.at < 60_000 && shown !== last.id;
+  const recent = last !== null && !navigating && Date.now() - last.at < 60_000;
+  const freshStreak = recent && min !== null && shown !== last.id;
+  const freshRough = recent && !!last?.roughSpot && roughDismissed !== last.id;
   useEffect(() => {
-    if (!fresh || !last) return;
+    if (!freshStreak || !last) return;
     const timer = setTimeout(() => setShown(last.id), DRIVE_UX.celebrateMs);
     return () => clearTimeout(timer);
-  }, [fresh, last]);
-  if (!fresh || min === null) return null;
+  }, [freshStreak, last]);
+  useEffect(() => {
+    if (!freshRough || !last) return;
+    const timer = setTimeout(() => setRoughDismissed(last.id), DRIVE_UX.celebrateMs + 3500);
+    return () => clearTimeout(timer);
+  }, [freshRough, last]);
+  if (!freshStreak && !freshRough) return null;
   return (
-    <Animated.View
-      entering={FadeIn.duration(300)}
-      exiting={FadeOut.duration(250)}
-      pointerEvents="none"
-      style={styles.streak}
-      testID="trip-streak"
-    >
-      <Icon name="sparkle" size={20} color="#FFC845" />
-      <Text style={styles.streakText}>{t('drive.streak', { n: min })}</Text>
-    </Animated.View>
+    <View style={{ alignItems: 'center', gap: 8 }}>
+      {freshStreak && min !== null && (
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          exiting={FadeOut.duration(250)}
+          pointerEvents="none"
+          style={styles.streak}
+          testID="trip-streak"
+        >
+          <Icon name="sparkle" size={20} color="#FFC845" />
+          <Text style={styles.streakText}>{t('drive.streak', { n: min })}</Text>
+        </Animated.View>
+      )}
+      {freshRough && last?.roughSpot && (
+        <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(200)}>
+          <Bouncy
+            testID="trip-pothole-ask"
+            accessibilityRole="button"
+            accessibilityLabel={t('insight.potholeAsk')}
+            onPress={() => {
+              engine.hazards.report('pothole', last.roughSpot!);
+              setRoughDismissed(last.id);
+            }}
+            style={styles.potholeChip}
+          >
+            <Icon name="alert" size={18} color="#FFC845" />
+            <Text style={styles.streakText}>{t('insight.potholeAsk')}</Text>
+          </Bouncy>
+        </Animated.View>
+      )}
+    </View>
   );
 }

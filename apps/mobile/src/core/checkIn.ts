@@ -94,9 +94,14 @@ export async function startCheckIn(c: Crews, myPlaces: () => Place[], radio: () 
 /** Somebody to tell? Without an opted-in crewmate the phone never asks. */
 const active = () => !!crews && crews.checkInConfigured();
 
+let lastFixT = 0;
+
 export function checkInFix(f: Fix): void {
   if (!started) return;
-  clockOffset = f.t - Date.now();
+  if (f.t >= lastFixT) {
+    lastFixT = f.t;
+    clockOffset = f.t - Date.now();
+  }
   if (!active()) {
     if (monitor.snapshot().phase !== 'none') apply(monitor.walking(f.t));
     return;
@@ -167,7 +172,8 @@ function contextFor(s: Stop): StopContext {
 /** Learned stop delays (D63) from my recent drives: lights, junctions and queues I wait at anyway. */
 async function refreshModel(): Promise<void> {
   if (model && now() - model.at < MODEL_MAX_AGE_MS) return;
-  const recent = (await db.tripSummaries(now() - 60 * 86_400_000)).slice(-MODEL_TRIPS);
+  // tripSummaries is ORDER BY started_at DESC, so slice(0, N) takes the newest trips (not slice(-N) which took the oldest).
+  const recent = (await db.tripSummaries(now() - 60 * 86_400_000)).slice(0, MODEL_TRIPS);
   const stops = [];
   for (const s of recent) {
     const trip = await db.loadTrip(s.id);

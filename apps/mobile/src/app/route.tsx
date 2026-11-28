@@ -12,6 +12,7 @@ import { useDriveAlong } from '../core/companions';
 import { finite } from '../core/errorScrub';
 import { loadRouteOptions, setRouteOptions } from '../core/nav';
 import { useApp } from '../core/store';
+import { computeTripInsight, type DoorToDoorInsight } from '../core/tripInsights';
 import { useBackClose } from '../ui/useBackClose';
 import { CrewMapView } from '../ui/map/CrewMapView';
 import { useLayoutMode } from '../ui/layout';
@@ -55,9 +56,17 @@ function TrafficBar({ r, fallback }: { r: NavRoute; fallback: string }) {
   );
 }
 
-/** Route preview with alternatives (traffic-aware ETAs), then Go → turn-by-turn. */
+/** Route preview with alternatives (traffic-aware ETAs), editable origin + swap, then Go → turn-by-turn. */
 export default function RoutePreview() {
-  const { name, lat, lng, with: withIds } = useLocalSearchParams<{ name: string; lat: string; lng: string; with?: string }>();
+  const { name, lat, lng, fromName, fromLat, fromLng, with: withIds } = useLocalSearchParams<{
+    name: string;
+    lat: string;
+    lng: string;
+    fromName?: string;
+    fromLat?: string;
+    fromLng?: string;
+    with?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lay = useLayoutMode();
@@ -67,6 +76,10 @@ export default function RoutePreview() {
   const session = useDriveAlong((s) => s.session);
   const [routes, setRoutes] = useState<RouteCandidate[] | null>(null);
   const dest = useMemo(() => ({ name: name ?? '', lat: Number(lat), lng: Number(lng) }), [name, lat, lng]);
+  const customOrigin = useMemo(
+    () => (fromLat && fromLng && finite(Number(fromLat)) && finite(Number(fromLng)) ? { name: fromName ?? '', lat: Number(fromLat), lng: Number(fromLng) } : null),
+    [fromName, fromLat, fromLng],
+  );
   const sameDest = !!session?.dest && Math.abs(session.dest.lat - dest.lat) < 1e-4 && Math.abs(session.dest.lng - dest.lng) < 1e-4;
   const selected = nav?.route ?? routes?.[0]?.route ?? null;
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +87,23 @@ export default function RoutePreview() {
   const [opts, setOpts] = useState<RouteOptions>(DEFAULT_ROUTE_OPTIONS);
   const [optsOpen, setOptsOpen] = useState(false);
   const [optsReady, setOptsReady] = useState(false);
+  const [insight, setInsight] = useState<DoorToDoorInsight | null>(null);
+
+  useEffect(() => {
+    const origin = customOrigin ?? useApp.getState().fix;
+    if (!origin || !finite(dest.lat) || !finite(dest.lng)) {
+      setInsight(null);
+      return;
+    }
+    let live = true;
+    computeTripInsight(origin, dest, useApp.getState().places).then(
+      (res) => live && setInsight(res),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [dest, customOrigin]);
 
   useEffect(() => {
     void loadRouteOptions().then((o) => {
@@ -101,14 +131,27 @@ export default function RoutePreview() {
     // The screen can be restored (process restart, reload) before the engine has booted.
     engine
       .boot()
-      .then(() => engine.nav.preview(dest))
+      .then(() => engine.nav.preview(dest, customOrigin))
       .then((r) => live && setRoutes(r))
       .catch((e: Error) => live && setError(e.message));
     return () => {
       live = false;
       if (!useApp.getState().nav?.active) useApp.getState().set({ nav: null });
     };
-  }, [dest, attempt, optsReady]);
+  }, [dest, customOrigin, attempt, optsReady]);
+
+  const swapEndpoints = () => {
+    const cur = customOrigin ?? (useApp.getState().fix ? { name: t('route.currentLoc'), lat: useApp.getState().fix!.lat, lng: useApp.getState().fix!.lng } : null);
+    if (!cur) return;
+    router.setParams({
+      name: cur.name,
+      lat: String(cur.lat),
+      lng: String(cur.lng),
+      fromName: dest.name,
+      fromLat: String(dest.lat),
+      fromLng: String(dest.lng),
+    });
+  };
 
   // Incidents on the selected route come from its Mapbox response: republish so their markers show on the preview map.
   const selectedId = selected?.id;
@@ -130,16 +173,71 @@ export default function RoutePreview() {
         <IconButton testID="route-options" icon="sliders" label={t('route.options')} active={optsOpen} onPress={() => setOptsOpen((o) => !o)} />
       </View>
       <Sheet style={[styles.sheet, wide ? [styles.panel, { width: lay.panelW + insets.left, paddingLeft: insets.left + 16, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }] : { paddingBottom: insets.bottom + 16 }]}>
-        <View style={styles.destRow}>
-          <View style={[styles.destIcon, { backgroundColor: `${palette.pop}22` }]}>
-            <Icon name="pin" size={22} color={palette.pop} />
+        <View style={styles.odWrap}>
+          <View style={{ flex: 1, gap: 6 }}>
+            <View style={styles.originRow}>
+              <Bouncy
+                testID="route-origin"
+                accessibilityRole="button"
+                accessibilityLabel={t('route.pickStart')}
+                onPress={() =>
+                  router.push({
+                    pathname: '/search',
+                    params: { pickOrigin: '1', destName: dest.name, destLat: String(dest.lat), destLng: String(dest.lng), ...(withIds ? { with: withIds } : {}) },
+                  })
+                }
+                style={[styles.originBtn, { backgroundColor: th.cardAlt, borderColor: th.border }]}
+              >
+                <Icon name="locate" size={16} color={th.accent} />
+                <Text style={[type.small, font('semibold'), { color: customOrigin ? th.text : th.textSoft, flex: 1 }]} numberOfLines={1}>
+                  {`${t('route.from')}: ${customOrigin ? customOrigin.name : t('route.currentLoc')}`}
+                </Text>
+              </Bouncy>
+              {customOrigin && (
+                <IconButton
+                  testID="route-origin-clear"
+                  icon="close"
+                  tone="plain"
+                  size={34}
+                  label={t('common.clear')}
+                  onPress={() => router.setParams({ fromName: '', fromLat: '', fromLng: '' })}
+                />
+              )}
+            </View>
+            <Bouncy
+              testID="route-dest"
+              accessibilityRole="button"
+              accessibilityLabel={t('gd.changeDest')}
+              onPress={() =>
+                router.push({
+                  pathname: '/search',
+                  params: {
+                    ...(customOrigin ? { fromName: customOrigin.name, fromLat: String(customOrigin.lat), fromLng: String(customOrigin.lng) } : {}),
+                    ...(withIds ? { with: withIds } : {}),
+                  },
+                })
+              }
+              style={styles.destRow}
+            >
+              <View style={[styles.destIcon, { backgroundColor: `${palette.pop}22` }]}>
+                <Icon name="pin" size={20} color={palette.pop} />
+              </View>
+              <Text style={[type.title, { color: th.text, flex: 1 }]} numberOfLines={1}>
+                {name}
+              </Text>
+            </Bouncy>
           </View>
-          <Text style={[type.title, { color: th.text, flex: 1 }]} numberOfLines={1}>
-            {name}
-          </Text>
+          <IconButton testID="route-swap" icon="shuffle" tone="plain" size={42} label={t('route.swap')} onPress={swapEndpoints} />
         </View>
 
         {optsOpen && <RouteOptionsPanel value={opts} onChange={changeOpts} />}
+        {insight && !optsOpen && (
+          <Text testID="route-insight" style={[type.caption, font('medium'), { color: th.textSoft }]} numberOfLines={2}>
+            {insight.advice
+              ? `${t('insight.typicalDrive', { min: Math.max(1, Math.round(insight.typicalS / 60)), n: insight.trips })} · ${t('insight.leaveBy', { arrive: formatClock(insight.arriveAt), leave: formatClock(insight.advice.leaveAt) })}`
+              : t('insight.typicalDrive', { min: Math.max(1, Math.round(insight.typicalS / 60)), n: insight.trips })}
+          </Text>
+        )}
         {error ? (
           <EmptyState icon="alert" title={error} action={{ label: t('common.retry'), onPress: () => setAttempt((n) => n + 1) }} />
         ) : routes === null ? (
@@ -257,8 +355,11 @@ const styles = StyleSheet.create({
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   panel: { top: 0, right: 'auto', borderTopLeftRadius: 0, borderTopRightRadius: radius.xl, borderBottomRightRadius: radius.xl, gap: 10 },
   panelList: { flex: 1 },
-  destRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  destIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  odWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  originRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  originBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.s, borderWidth: StyleSheet.hairlineWidth },
+  destRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  destIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   alt: { borderWidth: 1.5, borderRadius: radius.l - 4, padding: 14, gap: 8 },
   altTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   inc: { flexDirection: 'row', alignItems: 'center', gap: 3 },

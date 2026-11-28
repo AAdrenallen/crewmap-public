@@ -116,6 +116,17 @@ export class OverpassCells<T extends { lat: number; lng: number }> {
       return false;
     }
     this.cells.set(cell.key, { at: now, items: this.opts.normalise(r.data.elements, cell.bbox, now) });
+    if (this.cells.size > 64) {
+      let oldestKey: string | null = null;
+      let oldestAt = Infinity;
+      for (const [k, v] of this.cells) {
+        if (v.at < oldestAt) {
+          oldestAt = v.at;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) this.cells.delete(oldestKey);
+    }
     return true;
   }
 
@@ -149,14 +160,19 @@ export class OverpassCells<T extends { lat: number; lng: number }> {
     return stored;
   }
 
-  /** Items already on this phone inside `b` (no network), with the time their cell was fetched. */
+  /** Items already on this phone inside `b` (no network), with the time their cell was fetched. Works for any route size. */
   cached(b: BBox, now: number): { item: T; at: number }[] {
-    const cells = osmCells(b);
-    if (!cells) return [];
     const out: { item: T; at: number }[] = [];
-    for (const c of cells) {
-      const rec = this.cells.get(c.key);
-      if (!rec || now - rec.at > this.maxAgeMs) continue;
+    const s = Math.floor(b.south / OSM_CELL_DEG);
+    const w = Math.floor(b.west / OSM_CELL_DEG);
+    const n = Math.floor(b.north / OSM_CELL_DEG);
+    const e = Math.floor(b.east / OSM_CELL_DEG);
+    for (const [key, rec] of this.cells) {
+      if (now - rec.at > this.maxAgeMs) continue;
+      const [ys, xs] = key.split(':');
+      const y = Number(ys);
+      const x = Number(xs);
+      if (y < s || y > n || x < w || x > e) continue;
       for (const it of rec.items) {
         if (it.lat < b.south || it.lat > b.north || it.lng < b.west || it.lng > b.east) continue;
         out.push({ item: it, at: rec.at });

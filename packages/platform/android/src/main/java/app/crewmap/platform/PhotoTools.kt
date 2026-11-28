@@ -47,30 +47,44 @@ object PhotoTools {
       if (scale < 1f) postScale(scale, scale)
       if (rotation != 0f) postRotate(rotation)
     }
-    val bmp = if (scale < 1f || rotation != 0f) Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, m, true) else decoded
+    val bmp = if (scale < 1f || rotation != 0f) {
+      Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, m, true).also {
+        if (it !== decoded) decoded.recycle()
+      }
+    } else decoded
     var quality = 82
     var out: ByteArray
     var current = bmp
-    while (true) {
-      val bos = ByteArrayOutputStream()
-      current.compress(Bitmap.CompressFormat.JPEG, quality, bos)
-      out = bos.toByteArray()
-      if (out.size <= maxBytes) break
-      if (quality > 50) {
-        quality -= 8
-      } else {
-        // Still too big at a low quality: shrink by a quarter and try again.
-        val w = (current.width * 0.75f).roundToInt()
-        val h = (current.height * 0.75f).roundToInt()
-        if (w < 64 || h < 64) return null
-        current = Bitmap.createScaledBitmap(current, w, h, true)
-        quality = 70
+    val wOut: Int
+    val hOut: Int
+    try {
+      while (true) {
+        val bos = ByteArrayOutputStream()
+        current.compress(Bitmap.CompressFormat.JPEG, quality, bos)
+        out = bos.toByteArray()
+        if (out.size <= maxBytes) break
+        if (quality > 50) {
+          quality -= 8
+        } else {
+          // Still too big at a low quality: shrink by a quarter and try again.
+          val w = (current.width * 0.75f).roundToInt()
+          val h = (current.height * 0.75f).roundToInt()
+          if (w < 64 || h < 64) return null
+          val next = Bitmap.createScaledBitmap(current, w, h, true)
+          if (next !== current) current.recycle()
+          current = next
+          quality = 70
+        }
       }
+      wOut = current.width
+      hOut = current.height
+    } finally {
+      if (!current.isRecycled) current.recycle()
     }
     val dir = File(ctx.cacheDir, "memory-photos").apply { mkdirs() }
-    val f = File(dir, "p${System.currentTimeMillis()}.jpg")
+    val f = File(dir, "p${System.nanoTime()}.jpg")
     f.writeBytes(out)
-    return mapOf("uri" to Uri.fromFile(f).toString(), "width" to current.width, "height" to current.height, "bytes" to out.size)
+    return mapOf("uri" to Uri.fromFile(f).toString(), "width" to wOut, "height" to hOut, "bytes" to out.size)
   }
 
   /** Copies a local image into Pictures/CrewMap and opens the share sheet for it. False before Android 10 or on failure. */

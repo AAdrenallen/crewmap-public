@@ -238,39 +238,47 @@ export class QuebecSource implements HazardSource {
 
   async fetch(ctx: FetchContext): Promise<Hazard[]> {
     this.tracker.attempt(ctx.now);
+    const driving = ctx.reason === 'driving';
+    // Snap bbox to a 0.05° (~5 km) grid using integer arithmetic (20 = 1/0.05) so multiples stay exact and ETag/interval hits stick.
+    const snapped: BBox = {
+      south: Math.floor(ctx.bbox.south * 20 + 1e-9) / 20,
+      west: Math.floor(ctx.bbox.west * 20 + 1e-9) / 20,
+      north: Math.ceil(ctx.bbox.north * 20 - 1e-9) / 20,
+      east: Math.ceil(ctx.bbox.east * 20 - 1e-9) / 20,
+    };
+    const bboxKey = `${snapped.south.toFixed(2)},${snapped.west.toFixed(2)},${snapped.north.toFixed(2)},${snapped.east.toFixed(2)}`;
     const out: Hazard[] = [];
     let failures = 0;
-    const driving = ctx.reason === 'driving';
-    const bboxKey = qcUrl('ms:evenements', ctx.bbox);
-    for (const layer of QC_LAYERS) {
-      const cached = this.layerCache.get(layer);
-      if (cached && cached.bbox === bboxKey && ctx.now - cached.at < qcLayerIntervalMs(layer, driving)) {
-        out.push(...cached.hazards.filter((h) => h.expiresAt > ctx.now));
-        continue;
-      }
-      try {
-        const res = await this.http(qcUrl(layer, ctx.bbox));
-        if (res.status !== 200) {
-          failures++;
-          continue;
+    const results = await Promise.all(
+      QC_LAYERS.map(async (layer) => {
+        const cached = this.layerCache.get(layer);
+        if (cached && cached.bbox === bboxKey && ctx.now - cached.at < qcLayerIntervalMs(layer, driving)) {
+          return { ok: true, hazards: cached.hazards.filter((h) => h.expiresAt > ctx.now) };
         }
-        const fc = FC.safeParse(await res.json());
-        if (!fc.success) {
-          this.tracker.fail(ctx.now, 'shapeChanged', `${layer}: not a FeatureCollection`);
-          failures++;
-          continue;
+        try {
+          const res = await this.http(qcUrl(layer, snapped));
+          if (res.status !== 200) return { ok: false, hazards: [] as Hazard[] };
+          const fc = FC.safeParse(await res.json());
+          if (!fc.success) {
+            this.tracker.fail(ctx.now, 'shapeChanged', `${layer}: not a FeatureCollection`);
+            return { ok: false, hazards: [] as Hazard[] };
+          }
+          const got: Hazard[] = [];
+          for (const f of fc.data.features) {
+            const h = normaliseQc(layer, f, ctx.now);
+            if (h) got.push(h);
+          }
+          this.layerCache.set(layer, { at: ctx.now, bbox: bboxKey, hazards: got });
+          return { ok: true, hazards: got };
+        } catch (e) {
+          this.tracker.fail(ctx.now, 'degraded', `${layer}: ${(e as Error).message}`);
+          return { ok: false, hazards: [] as Hazard[] };
         }
-        const got: Hazard[] = [];
-        for (const f of fc.data.features) {
-          const h = normaliseQc(layer, f, ctx.now);
-          if (h) got.push(h);
-        }
-        this.layerCache.set(layer, { at: ctx.now, bbox: bboxKey, hazards: got });
-        out.push(...got);
-      } catch (e) {
-        failures++;
-        this.tracker.fail(ctx.now, 'degraded', `${layer}: ${(e as Error).message}`);
-      }
+      }),
+    );
+    for (const r of results) {
+      if (!r.ok) failures++;
+      else out.push(...r.hazards);
     }
     if (failures === 0) this.tracker.ok(ctx.now);
     else if (failures === QC_LAYERS.length) this.tracker.fail(ctx.now, 'degraded', 'all layers failed');

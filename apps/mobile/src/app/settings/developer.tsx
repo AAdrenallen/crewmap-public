@@ -10,6 +10,7 @@ import { engine } from '../../core/engine';
 import { useApp } from '../../core/store';
 import { Button, Card, Chip, Field, KeyboardScroll, H, ScreenHeader, Segmented, T, Toggle } from '../../ui/kit';
 import { useTheme } from '../../ui/theme';
+import { useActiveInterval } from '../../ui/useActiveInterval';
 import { useDeveloperVisible } from '../../ui/shell/devGate';
 
 type DemoModule = typeof import('../../dev/demo');
@@ -65,13 +66,9 @@ export default function Developer() {
 
   useEffect(() => {
     void benchmark.lastReport().then(setReport);
-    const off = benchmark.onChange(() => force((n) => n + 1));
-    const timer = setInterval(() => force((n) => n + 1), 2000);
-    return () => {
-      off();
-      clearInterval(timer);
-    };
+    return benchmark.onChange(() => force((n) => n + 1));
   }, []);
+  useActiveInterval(() => force((n) => n + 1), 2000, visible);
 
   // Production builds: the screen only renders after the hidden unlock (7 taps on the version in Settings).
   if (!visible) {
@@ -129,6 +126,7 @@ export default function Developer() {
         ))}
         {isOwner && cfg && (
           <>
+            <Toggle label={t('dev.wazeLive')} value={cfg.wazeEnabled} onChange={(v) => engine.hazards.setConfig({ wazeEnabled: v, paidEnabled: cfg.paidEnabled })} />
             <Toggle label={t('dev.wazePaid')} value={cfg.paidEnabled} onChange={(v) => engine.hazards.setConfig({ wazeEnabled: cfg.wazeEnabled, paidEnabled: v })} />
           </>
         )}

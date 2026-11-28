@@ -64,7 +64,6 @@ import type { LatLng } from '@crewmap/shared/geo';
 import { currentRouteQuery, excludeList, type NavRoute } from '@crewmap/shared/navigation';
 import { lang, t, tIn, type Lang } from '@crewmap/shared/i18n';
 import { formatClock, formatDistance } from '@crewmap/shared/units';
-import { budgetLevel } from './apiBudget';
 import { isConvoyMuted, loadConvoyPrefs, useConvoyPrefs } from './convoyPrefs';
 import { directionsQuery } from './mapbox';
 import { getRouteOptions } from './nav';
@@ -231,8 +230,8 @@ export class Companions {
   ): DriveAlongAvailability {
     if (!this.crews.router) return 'offline';
     const f = useApp.getState().allFriends[friendId];
-    // Unknown (never heard presence) counts as old: an acked op to an old build would only retry until it gives up.
-    if (peerSupports(f?.presence, cap) !== true) return 'old';
+    // Unknown (never heard presence yet) is tried like asks.ts; only known older builds are blocked as 'old'.
+    if (peerSupports(f?.presence, cap) === false) return 'old';
     if (!this.crews.companionAllowed(kind, friendId)) return 'policy';
     if (kind === 'drive-along' && useApp.getState().settings.ghost) return 'policy';
     return 'ok';
@@ -365,7 +364,6 @@ export class Companions {
     const st = useApp.getState();
     const line = leader ? useDriveAlong.getState().routes[leader]?.line : undefined;
     if (!s?.dest || !leader || leader === this.me.deviceId || !line || !st.fix) return false;
-    if (budgetLevel('directions') === 'off') return false;
     const rest = followLine(line, st.fix);
     const q = rest ? currentRouteQuery(rest, st.fix.heading, excludeList(getRouteOptions())) : null;
     if (!q) return false;
@@ -673,8 +671,12 @@ export class Companions {
       },
     }));
     this.tracker.update(m.sender, { lat: p.lat, lng: p.lng, t: p.t, spd: p.spd ?? null });
-    const next = heard(s, m.sender, Date.now());
-    useDriveAlong.setState({ session: next });
+    const now = Date.now();
+    const cur = s.members[m.sender];
+    // Throttle session.heard updates to 15 s so 1.5 s live fixes don't re-render the low-rate store or hammer SQLite.
+    if (!cur || cur.state !== 'joined' || now - (s.heard[m.sender] ?? 0) >= 15_000) {
+      useDriveAlong.setState({ session: heard(s, m.sender, now) });
+    }
   }
 
   private onRoute(from: string, raw: unknown): void {
@@ -691,9 +693,21 @@ export class Companions {
     if (from === convoyLeader(s)) this.updateConvoy();
   }
 
+  private cachedRouteGeom: unknown = null;
+  private cachedRouteRef: ReturnType<typeof routeRef> | null = null;
+
   private myRoute() {
     const nav = useApp.getState().nav;
-    return nav?.active ? routeRef(nav.route.geometry) : null;
+    if (!nav?.active) {
+      this.cachedRouteGeom = null;
+      this.cachedRouteRef = null;
+      return null;
+    }
+    if (this.cachedRouteGeom !== nav.route.geometry) {
+      this.cachedRouteGeom = nav.route.geometry;
+      this.cachedRouteRef = routeRef(nav.route.geometry);
+    }
+    return this.cachedRouteRef;
   }
 
   /** Per fix (store subscription): live presence to companions at 1.5 s while driving, relations and voice cues. */

@@ -7,9 +7,9 @@ function julian(t: number): number {
   return t / 86_400_000 + 2440587.5;
 }
 
-/** Returns sunrise and sunset (epoch ms) for the UTC day containing `t` at (lat, lng). Null in polar day/night. */
+/** Returns sunrise and sunset (epoch ms) for the local solar day containing `t` at (lat, lng). Null in polar day/night. */
 export function sunTimes(t: number, lat: number, lng: number): { sunrise: number; sunset: number } | null {
-  const day = Math.floor(julian(t) - 2451545.0 + 0.0008);
+  const day = Math.round(julian(t) - 2451545.0 + 0.0008 + lng / 360);
   const meanSolarNoon = day - lng / 360;
   const M = (357.5291 + 0.98560028 * meanSolarNoon) % 360;
   const C = 1.9148 * Math.sin(M * RAD) + 0.02 * Math.sin(2 * M * RAD) + 0.0003 * Math.sin(3 * M * RAD);

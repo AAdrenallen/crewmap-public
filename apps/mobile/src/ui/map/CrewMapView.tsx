@@ -10,7 +10,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from 'react';
-import { AppState, Dimensions, StyleSheet, Text, View } from 'react-native';
+import { AppState, Dimensions, PixelRatio, StyleSheet, Text, View } from 'react-native';
 import { followPaddingFor, previewPaddingFor, useLayoutMode } from '../layout';
 import Mapbox, {
   Camera,
@@ -58,7 +58,7 @@ import { ROUTE_COLORS, alternativeFeatures, colorOfRoute, routeFeatures } from '
 import { fitBounds } from '@crewmap/shared/cameraFit';
 import { setProjector } from './projector';
 import { useFriendPose, useSelfMotion, useSelfPose } from './motion';
-import { CLUSTER, clusterByPixels, clusterTap, isSameSpot } from '@crewmap/shared/crewCluster';
+import { CLUSTER, clusterCrew, clusterTap, isSameSpot } from '@crewmap/shared/crewCluster';
 import { ClusterMarker, ClusterSheet, type CrewCluster } from './CrewClusters';
 import { getLastCenter } from '../../core/lastCenter';
 import { finite } from '../../core/errorScrub';
@@ -210,19 +210,22 @@ const ATTRIB_W = 30;
 const HITBOX = { width: 24, height: 24 };
 const MARKER_ANCHOR = { x: 0.5, y: 0.85 };
 
-/** Light preset from the sun at the current fix, re-evaluated once a minute (not per render / per fix). */
-function useLightPreset(): 'day' | 'night' | 'dawn' | 'dusk' {
+/** Light preset from settings (`adaptive` follows local sun once a minute; `light` = day; `dark` = night). */
+export function useMapLightPreset(): 'day' | 'night' | 'dawn' | 'dusk' {
+  const mapTheme = useApp((s) => s.settings.mapTheme ?? 'adaptive');
   const hasFix = useApp((s) => s.fix !== null);
   const compute = () => {
     const f = useApp.getState().fix;
     return f ? lightPreset(Date.now(), f.lat, f.lng) : 'day';
   };
-  const [preset, setPreset] = useState(compute);
+  const [sunPreset, setSunPreset] = useState(compute);
   useEffect(() => {
-    setPreset(compute());
-  }, [hasFix]);
-  useActiveInterval(() => setPreset(compute()), PRESET_EVERY_MS);
-  return preset;
+    if (mapTheme === 'adaptive') setSunPreset(compute());
+  }, [hasFix, mapTheme]);
+  useActiveInterval(() => setSunPreset(compute()), PRESET_EVERY_MS, mapTheme === 'adaptive');
+  if (mapTheme === 'light') return 'day';
+  if (mapTheme === 'dark') return 'night';
+  return sunPreset;
 }
 
 /** Index of the ramp step being highlighted (-1 when none): changes a few times per route, not per fix. */
@@ -277,9 +280,16 @@ const HazardLayers = memo(function HazardLayers({
   onPress: (h: MergedHazard) => void;
 }) {
   const hazards = useApp((s) => s.hazards);
-  // Minute tick so the fresh halo expires even when the hazard list does not change.
+  // Minute tick only while a hazard is within the fresh-halo window; zero GeoJSON rebuilds on an idle map.
   const [minute, setMinute] = useState(0);
-  useActiveInterval(() => setMinute((m) => m + 1), 60_000);
+  const hazardsRef = useRef(hazards);
+  hazardsRef.current = hazards;
+  useActiveInterval(() => {
+    const now = Date.now();
+    if (hazardsRef.current.some((h) => now - h.latestReportAt <= HAZARD_FRESH_MS + 65_000)) {
+      setMinute((m) => m + 1);
+    }
+  }, 60_000);
   const hazardShape = useMemo(() => {
     const now = Date.now();
     return {
@@ -355,8 +365,8 @@ const FriendMarker = memo(function FriendMarker({
   // Driving: a bigger touch target; the label carries the routed drive time (primary friend metric).
   const driving = useApp((s) => s.driving || s.nav?.active === true);
   const eta = f.etaS !== null && !f.paused ? formatMinutes(f.etaS) : null;
-  // A one-time share (D47): compact countdown on the label, e.g. "Bob · ◷ 23m".
-  const now = useNow();
+  // A one-time share (D47): compact countdown on the label, e.g. "Bob · ◷ 23m" (only ticks when a once-share is active).
+  const now = useNow(30_000, !!f.once);
   const once = f.once && f.once.until > now ? `◷ ${minutesLeft(f.once.until, now)}m` : null;
   // Convoy (D65): place in the line; the store changes only when the order does.
   const order = useDriveAlong((s) => s.convoyOrder[f.profile.deviceId] ?? null);
@@ -421,8 +431,8 @@ const SelfLocation = memo(function SelfLocation() {
   );
 });
 
-/** Own sprite, positioned from the same smoothed pose as the camera (≤ 10 Hz, this component only). */
-const SelfMarker = memo(function SelfMarker() {
+/** Own sprite, positioned from the same smoothed pose as the camera (≤ 10 Hz, this component only); hidden when posing in a group cluster. */
+const SelfMarker = memo(function SelfMarker({ clustered }: { clustered: boolean }) {
   const pose = useSelfPose((s) => s.pose);
   const camBearing = useSelfPose((s) => s.bearing);
   const fixT = useApp((s) => s.fix?.t ?? 0);
@@ -431,7 +441,7 @@ const SelfMarker = memo(function SelfMarker() {
   const walking = useApp((s) => s.activity === 'walking');
   const navigating = useApp((s) => s.nav?.active === true);
   const bearing = useMapBearing((s) => s.bearing);
-  if (!pose || !me) return null;
+  if (!pose || !me || clustered) return null;
   // Heading-up follow: the native camera bearing is the provider bearing (course moving, compass stopped), so draw
   // the car relative to it instead
   // of the (polled, up to CAMERA_POLL_MS stale) camera bearing, which would show it sideways mid-turn.
@@ -459,6 +469,7 @@ const SelfMarker = memo(function SelfMarker() {
 interface Props {
   onViewport?: (b: BBox | null) => void;
   onFriendPress?: (id: string) => void;
+  onSelfPress?: () => void;
   onLongPress?: (lat: number, lng: number) => void;
   onHazardPress?: (h: MergedHazard) => void;
   onPlacePress?: (p: Place) => void;
@@ -510,12 +521,12 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
   // Drive-along overlays (D31) project companions and briefly frame them without touching this tree's state.
   useEffect(() => {
     let back: ReturnType<typeof setTimeout> | null = null;
-    setProjector({
-      pointInView: async (lng, lat) => {
+    const proj = {
+      pointInView: async (lng: number, lat: number): Promise<[number, number]> => {
         const p = await mapRef.current?.getPointInView([lng, lat]);
         return [p?.[0] ?? NaN, p?.[1] ?? NaN];
       },
-      showBoth: (a, b) => {
+      showBoth: (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
         setFollow(false);
         const { width, height } = Dimensions.get('window');
         const pad = [140, 70, 160, 70] as const;
@@ -525,10 +536,11 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
         if (back) clearTimeout(back);
         back = setTimeout(() => setFollow(true), 4000);
       },
-    });
+    };
+    setProjector(proj);
     return () => {
       if (back) clearTimeout(back);
-      setProjector(null);
+      setProjector(null, proj);
     };
   }, []);
 
@@ -586,7 +598,7 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
     if (navigating) setFollow(true);
   }, [navigating]);
 
-  const preset = useLightPreset();
+  const preset = useMapLightPreset();
   // Heading-up like Google Maps / Waze: the camera bearing follows the provider bearing (GPS course moving, compass
   // stopped; it arrives as "heading", so course mode would never rotate). Rotation stays native; JS feeds poses.
   const headingUp = navigating || driving;
@@ -657,22 +669,38 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
       const m = mapRef.current;
       if (!m) return;
       const st = useApp.getState();
-      const live = Object.values(st.friends).filter((f) => f.presence && !f.paused);
-      if (live.length < 2) {
+      const drive = st.driving || st.nav?.active === true;
+      const liveFriends = Object.values(st.friends).filter((f) => f.presence && !f.paused);
+      const entries: { id: string; lat: number; lng: number; sameSpotOk: boolean }[] = liveFriends.map((f) => ({
+        id: f.profile.deviceId,
+        lat: f.presence!.lat,
+        lng: f.presence!.lng,
+        sameSpotOk: f.presence!.act !== 'automotive',
+      }));
+      // Include ourselves when not driving so we pose WITH crewmates at the same spot instead of stacking on top of them!
+      if (!drive && st.me && st.fix && liveFriends.length >= 1) {
+        entries.push({ id: st.me.deviceId, lat: st.fix.lat, lng: st.fix.lng, sameSpotOk: true });
+      }
+      if (entries.length < 2) {
         setClusters((c) => (c.length ? [] : c));
         return;
       }
-      const pts = await Promise.all(
-        live.map(async (f) => {
-          const p = await m.getPointInView([f.presence!.lng, f.presence!.lat]);
-          return { id: f.profile.deviceId, x: p?.[0] ?? NaN, y: p?.[1] ?? NaN };
+      const win = Dimensions.get('window');
+      const dpr = Math.max(1, PixelRatio.get());
+      const rawPts = await Promise.all(
+        entries.map(async (e) => {
+          const p = await m.getPointInView([e.lng, e.lat]).catch(() => null);
+          return { ...e, x: p?.[0] ?? NaN, y: p?.[1] ?? NaN };
         }),
       );
-      const drive = st.driving || st.nav?.active === true;
-      const groups = clusterByPixels(pts, drive ? CLUSTER.overlapPxDriving : CLUSTER.overlapPx).filter((g) => g.length > 1);
+      // Android Mapbox versions returning physical pixels exceed window dp bounds; normalise cleanly to dp.
+      const inPhysicalPx = dpr > 1.2 && rawPts.some((p) => (Number.isFinite(p.x) && p.x > win.width * 1.15) || (Number.isFinite(p.y) && p.y > win.height * 1.15));
+      const pts = inPhysicalPx ? rawPts.map((p) => ({ ...p, x: p.x / dpr, y: p.y / dpr })) : rawPts;
+      const byId = new Map(pts.map((p) => [p.id, p]));
+      const groups = clusterCrew(pts, drive ? CLUSTER.overlapPxDriving : CLUSTER.overlapPx).filter((g) => g.length > 1);
       const next = groups.map((ids) => ({
         ids,
-        same: isSameSpot(ids.map((id) => st.friends[id]!.presence!)),
+        same: isSameSpot(ids.map((id) => byId.get(id)!)),
       }));
       setClusters((c) => (JSON.stringify(c) === JSON.stringify(next) ? c : next));
     };
@@ -684,8 +712,9 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
     }, wait);
   }, []);
   useEffect(() => {
+    recluster();
     const unsub = useApp.subscribe((s, prev) => {
-      if (s.friends !== prev.friends || s.driving !== prev.driving) recluster();
+      if (s.friends !== prev.friends || s.driving !== prev.driving || s.fix !== prev.fix) recluster();
     });
     return () => {
       unsub();
@@ -693,6 +722,7 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
     };
   }, [recluster]);
   const hidden = useMemo(() => new Set(clusters.flatMap((c) => c.ids)), [clusters]);
+  const selfClustered = useApp((s) => (s.me ? hidden.has(s.me.deviceId) : false));
   const onClusterPress = useCallback((c: CrewCluster) => {
     const m = mapRef.current;
     if (!m) return;
@@ -700,8 +730,17 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
       .getZoom()
       .then((zoom) => {
         const st = useApp.getState();
-        const pts = c.ids.flatMap((id) => (st.friends[id]?.presence ? [st.friends[id]!.presence!] : []));
+        const pts = c.ids.flatMap((id) => {
+          if (st.friends[id]?.presence) return [st.friends[id]!.presence!];
+          if (st.me?.deviceId === id && st.fix) return [{ lat: st.fix.lat, lng: st.fix.lng }];
+          return [];
+        });
         const { width, height } = Dimensions.get('window');
+        // Same-spot clusters stay together at every zoom: open the member sheet directly if already zoomed in (>= 16.5), else frame nicely.
+        if (c.same && zoom >= 16.5) {
+          setClusterList(c.ids);
+          return;
+        }
         const tap = clusterTap(pts, zoom, { width, height });
         if (tap.kind === 'list') {
           setClusterList(c.ids);
@@ -710,7 +749,7 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
         setFollow(false);
         cam.current?.setCamera({
           centerCoordinate: [tap.center.lng, tap.center.lat],
-          zoomLevel: tap.zoom,
+          zoomLevel: c.same ? Math.min(17.5, tap.zoom) : tap.zoom,
           animationDuration: 700,
           animationMode: 'easeTo',
         });
@@ -860,10 +899,10 @@ const CrewMapViewImpl = forwardRef<CrewMapHandle, Props>(function CrewMapView(pr
           <ClusterMarker key={c.ids.join('|')} c={c} driving={driving || navigating} onPress={onClusterPress} />
         ))}
         <SelfLocation />
-        <SelfMarker />
+        <SelfMarker clustered={selfClustered} />
       </MapView>
       {overlay}
-      <ClusterSheet ids={clusterList} onClose={closeClusterList} onOpen={openFromCluster} />
+      <ClusterSheet ids={clusterList} onClose={closeClusterList} onOpen={openFromCluster} onOpenSelf={() => cb.current.onSelfPress?.()} />
     </View>
   );
 });

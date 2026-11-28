@@ -41,21 +41,10 @@ interface RouteLike {
   steps: { startAlongM: number }[];
 }
 
-function limitAt(r: RouteLike, along: number): number | null {
-  let lo = 0;
-  let hi = r.cum.length - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (r.cum[mid]! <= along) lo = mid;
-    else hi = mid;
-  }
-  return r.maxspeedKph[lo] ?? null;
-}
-
 export function curveAdvisories(r: RouteLike, cfg = ADVISORY): CurveAdvisory[] {
   const total = r.cum[r.cum.length - 1] ?? 0;
   if (total < cfg.chordM * 3) return [];
-  const maneuvers = r.steps.slice(1).map((s) => s.startAlongM);
+  const maneuvers = r.steps.slice(1).map((s) => s.startAlongM).sort((a, b) => a - b);
   const out: CurveAdvisory[] = [];
   let zone: { start: number; end: number; minR: number; turn: number; limit: number } | null = null;
   const flush = () => {
@@ -72,16 +61,33 @@ export function curveAdvisories(r: RouteLike, cfg = ADVISORY): CurveAdvisory[] {
     if (speed > z.limit - cfg.belowLimitKph) return;
     out.push({ startAlongM: z.start, endAlongM: z.end, speedKph: speed, side: z.turn < 0 ? 'left' : 'right', sharp: Math.abs(z.turn) >= 80 });
   };
+  let ia = 0;
+  let ib = 0;
+  let ic = 0;
+  let mi = 0;
+  const ptAt = (along: number, startIdx: number): [LatLng, number] => {
+    let idx = startIdx;
+    while (idx + 1 < r.cum.length - 1 && r.cum[idx + 1]! <= along) idx++;
+    const p0 = r.geometry[idx]!;
+    const p1 = r.geometry[idx + 1] ?? p0;
+    const seg = (r.cum[idx + 1] ?? r.cum[idx]!) - r.cum[idx]!;
+    const f = seg > 0 ? Math.min(1, Math.max(0, (along - r.cum[idx]!) / seg)) : 0;
+    return [{ lat: p0.lat + (p1.lat - p0.lat) * f, lng: p0.lng + (p1.lng - p0.lng) * f }, idx];
+  };
   for (let s = cfg.chordM; s <= total - cfg.chordM; s += cfg.sampleM) {
-    const a = pointAlong(r.geometry, r.cum, s - cfg.chordM);
-    const b = pointAlong(r.geometry, r.cum, s);
-    const c = pointAlong(r.geometry, r.cum, s + cfg.chordM);
+    let a: LatLng;
+    let b: LatLng;
+    let c: LatLng;
+    [a, ia] = ptAt(s - cfg.chordM, ia);
+    [b, ib] = ptAt(s, ib);
+    [c, ic] = ptAt(s + cfg.chordM, ic);
     const d = angleDiffDeg(bearingDeg(a, b), bearingDeg(b, c));
     const rad = (Math.abs(d) * Math.PI) / 180;
     const radius = rad > 1e-4 ? cfg.chordM / rad : Infinity;
-    const limit = limitAt(r, s) ?? cfg.defaultLimitKph;
+    const limit = r.maxspeedKph[ib] ?? cfg.defaultLimitKph;
     const vKph = Math.sqrt(cfg.lateralAccel * radius) * 3.6;
-    const nearManeuver = maneuvers.some((m) => Math.abs(m - s) < cfg.maneuverClearM);
+    while (mi < maneuvers.length && maneuvers[mi]! <= s - cfg.maneuverClearM) mi++;
+    const nearManeuver = mi < maneuvers.length && Math.abs(maneuvers[mi]! - s) < cfg.maneuverClearM;
     if (!nearManeuver && vKph < limit - cfg.belowLimitKph + 10) {
       if (!zone) zone = { start: s - cfg.chordM, end: s + cfg.chordM, minR: radius, turn: 0, limit };
       zone.end = s + cfg.chordM;

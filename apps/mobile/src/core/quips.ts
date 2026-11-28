@@ -1,6 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import { create } from 'zustand';
+import { platform } from '@crewmap/platform';
 import {
   IMAGE_MIMES,
   LruBlobStore,
@@ -69,9 +70,12 @@ export function addReceived(e: ReceivedEntry): void {
 
 /** Local file of a blob, for playback (audio gets an extension the player recognises) and display (images). */
 export async function blobUri(ref: QuipBlobRef, audio: boolean): Promise<string | null> {
+  if (!audio) {
+    const f = fileOf(ref.h);
+    return f.exists ? f.uri : null;
+  }
   const bytes = await quipStore.get(ref.h);
   if (!bytes) return null;
-  if (!audio) return fileOf(ref.h).uri;
   const f = new File(Paths.cache, `quip-${ref.h}.m4a`);
   if (!f.exists) {
     f.create({ overwrite: true });
@@ -94,20 +98,35 @@ export async function blobsOf(q: QuipMeta): Promise<Map<string, Uint8Array> | nu
 export type PickedImage = { ok: true; bytes: Uint8Array; mime: string } | { ok: false; reason: 'canceled' | 'tooBig' | 'type' };
 
 /**
- * Pick an image or GIF from the device (system picker, no extra native module). It must already fit the transport
- * limits (image ≤ 80 KB, GIF ≤ 250 KB): there is no on-device re-encoder in this build, so larger files are refused.
+ * Pick an image or GIF from the device. GIFs must fit the 250 KB limit directly; static images (JPEG/PNG/WebP/HEIC)
+ * over 80 KB are automatically re-encoded on device via `platform.photos.compress` so any phone photo works.
  */
 export async function pickImage(): Promise<PickedImage> {
   const res = await DocumentPicker.getDocumentAsync({ type: ['image/*'], copyToCacheDirectory: true });
   const a = res.canceled ? null : res.assets[0];
   if (!a) return { ok: false, reason: 'canceled' };
-  const mime = a.mimeType ?? '';
-  if (!(IMAGE_MIMES as readonly string[]).includes(mime)) return { ok: false, reason: 'type' };
-  const max = mime === 'image/gif' ? QUIP_LIMITS.maxGifBytes : QUIP_LIMITS.maxImageBytes;
-  if ((a.size ?? 0) > max) return { ok: false, reason: 'tooBig' };
-  const bytes = fromB64(await new File(a.uri).base64());
-  if (bytes.length > max) return { ok: false, reason: 'tooBig' };
-  return { ok: true, bytes, mime };
+  const mime = (a.mimeType ?? '').toLowerCase();
+  if (mime === 'image/gif') {
+    if ((a.size ?? 0) > QUIP_LIMITS.maxGifBytes) return { ok: false, reason: 'tooBig' };
+    const bytes = fromB64(await new File(a.uri).base64());
+    if (bytes.length > QUIP_LIMITS.maxGifBytes) return { ok: false, reason: 'tooBig' };
+    return { ok: true, bytes, mime };
+  }
+  if (!mime.startsWith('image/')) return { ok: false, reason: 'type' };
+  if ((IMAGE_MIMES as readonly string[]).includes(mime) && (a.size ?? Infinity) <= QUIP_LIMITS.maxImageBytes) {
+    const bytes = fromB64(await new File(a.uri).base64());
+    if (bytes.length <= QUIP_LIMITS.maxImageBytes) return { ok: true, bytes, mime };
+  }
+  // Re-encode oversized or HEIC/HEIF static images down to ≤ 80 KB JPEG using the native photo compressor.
+  try {
+    const out = await platform.photos.compress(a.uri, 1024, QUIP_LIMITS.maxImageBytes);
+    if (!out) return { ok: false, reason: 'tooBig' };
+    const bytes = fromB64(await new File(out.uri).base64());
+    if (bytes.length > QUIP_LIMITS.maxImageBytes) return { ok: false, reason: 'tooBig' };
+    return { ok: true, bytes, mime: 'image/jpeg' };
+  } catch {
+    return { ok: false, reason: 'tooBig' };
+  }
 }
 
 export interface NewQuip {

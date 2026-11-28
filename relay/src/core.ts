@@ -111,6 +111,7 @@ interface Sub {
 
 export class RelayCore {
   private readonly subs = new Map<string, Sub>();
+  private readonly connSubs = new Map<string, Set<string>>();
   private readonly senders = new Map<string, (m: RelayOut) => void>();
   readonly stats = { accepted: 0, rejected: 0, delivered: 0 };
 
@@ -132,7 +133,11 @@ export class RelayCore {
 
   disconnect(conn: string): void {
     this.senders.delete(conn);
-    for (const [k, s] of this.subs) if (s.conn === conn) this.subs.delete(k);
+    const keys = this.connSubs.get(conn);
+    if (keys) {
+      for (const k of keys) this.subs.delete(k);
+      this.connSubs.delete(conn);
+    }
   }
 
   /** Handle one client message (already JSON-parsed). */
@@ -142,8 +147,11 @@ export class RelayCore {
     const [type] = msg as [string];
     if (type === 'EVENT') this.onEvent(send, msg[1] as Ev);
     else if (type === 'REQ') this.onReq(conn, send, msg[1] as string, msg.slice(2) as Filter[]);
-    else if (type === 'CLOSE') this.subs.delete(`${conn}:${msg[1] as string}`);
-    else send(['NOTICE', 'unsupported message']);
+    else if (type === 'CLOSE') {
+      const k = `${conn}:${msg[1] as string}`;
+      this.subs.delete(k);
+      this.connSubs.get(conn)?.delete(k);
+    } else send(['NOTICE', 'unsupported message']);
   }
 
   private onEvent(send: (m: RelayOut) => void, ev: Ev): void {
@@ -175,7 +183,11 @@ export class RelayCore {
   }
 
   private onReq(conn: string, send: (m: RelayOut) => void, id: string, filters: Filter[]): void {
-    this.subs.set(`${conn}:${id}`, { conn, id, filters });
+    const k = `${conn}:${id}`;
+    this.subs.set(k, { conn, id, filters });
+    let set = this.connSubs.get(conn);
+    if (!set) this.connSubs.set(conn, (set = new Set()));
+    set.add(k);
     for (const ev of this.store.query(filters, this.nowS())) {
       this.stats.delivered++;
       send(['EVENT', id, ev]);

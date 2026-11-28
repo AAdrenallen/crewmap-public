@@ -9,10 +9,12 @@ import {
   directionsUrl,
   discoverRoutes,
   displayRef,
+  endpointsMatch,
   endZoneM,
   isDistinct,
   isMidDistinct,
   labelCandidates,
+  learnedRoutes,
   normRef,
   parseMapboxRoute,
   plausibleOf,
@@ -406,5 +408,21 @@ describe('discovery modes (D60: fewer Directions calls)', () => {
     const res = await discoverRoutes(input('full'), w.fetch, null);
     expect(w.queries.some((q) => q.excludePoints?.length)).toBe(false);
     expect(res.calls).toBeLessThan(DISCOVERY.callBudget);
+  });
+
+  it('never matches a short reverse B→A trace when routing A→B', () => {
+    const startA = P(0, 0);
+    const destB = P(0.85, 0); // ~850 m local trip
+    const reverseLine = [destB, P(0.4, 0), startA];
+    const forwardLine = [startA, P(0.4, 0), destB];
+    expect(endpointsMatch(reverseLine[0]!, reverseLine[2]!, startA, destB, 850, CANDIDATES)).toBe(false);
+    expect(endpointsMatch(forwardLine[0]!, forwardLine[2]!, startA, destB, 850, CANDIDATES)).toBe(true);
+    const learned = learnedRoutes(
+      [{ tripId: 'rev', endedAt: NOON, line: reverseLine, distanceM: 850 }],
+      startA,
+      destB,
+      NOON,
+    );
+    expect(learned).toHaveLength(0);
   });
 });

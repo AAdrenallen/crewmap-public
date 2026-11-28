@@ -36,12 +36,33 @@ export function mergePois(all: Poi[]): Poi[] {
   const sorted = [...all].sort((a, b) => SOURCE_RANK[b.source] - SOURCE_RANK[a.source] || b.at - a.at);
   const out: Poi[] = [];
   const byId = new Set<string>();
+  const CELL = 0.002;
+  const grid = new Map<string, Poi[]>();
   for (const p of sorted) {
     if (byId.has(p.id)) continue;
     byId.add(p.id);
-    const near = out.find((q) => q.kind === p.kind && Math.abs(q.lat - p.lat) < 0.002 && haversineM(q, p) <= mergeRadius(q, p));
+    const cy = Math.floor(p.lat / CELL);
+    const cx = Math.floor(p.lng / CELL);
+    let near: Poi | undefined;
+    for (let dy = -1; dy <= 1 && !near; dy++) {
+      for (let dx = -1; dx <= 1 && !near; dx++) {
+        const bucket = grid.get(`${p.kind}:${cy + dy}:${cx + dx}`);
+        if (!bucket) continue;
+        for (const q of bucket) {
+          if (Math.abs(q.lat - p.lat) < CELL && Math.abs(q.lng - p.lng) < 0.003 && haversineM(q, p) <= mergeRadius(q, p)) {
+            near = q;
+            break;
+          }
+        }
+      }
+    }
     if (!near) {
-      out.push({ ...p });
+      const copy = { ...p };
+      out.push(copy);
+      const gk = `${p.kind}:${cy}:${cx}`;
+      let b = grid.get(gk);
+      if (!b) grid.set(gk, (b = []));
+      b.push(copy);
       continue;
     }
     if (p.source !== near.source) near.alsoFrom = [...new Set([...(near.alsoFrom ?? []), p.source])];
@@ -146,10 +167,13 @@ const enc = new TextEncoder();
 
 /** Encode by share group, nearest to `centre` first within a group, stopping at the UTF-8 byte budget. */
 export function encodePois(pois: Poi[], centre: LatLng, maxBytes: number = POI_TUNING.shareMaxBytes): string {
-  const rows = [...pois].sort((a, b) => shareGroup(a) - shareGroup(b) || haversineM(centre, a) - haversineM(centre, b)).map(toRow);
+  const ranked = pois
+    .map((p) => ({ p, g: shareGroup(p), d: haversineM(centre, p) }))
+    .sort((a, b) => a.g - b.g || a.d - b.d);
   const out: Row[] = [];
   let bytes = 20;
-  for (const r of rows) {
+  for (const { p } of ranked) {
+    const r = toRow(p);
     const n = enc.encode(JSON.stringify(r)).length + 1;
     if (bytes + n > maxBytes) break;
     out.push(r);

@@ -14,9 +14,9 @@ export const ASK = {
   /** A where-answer stays as a card this long unless dismissed. */
   cardMs: 6 * 3_600_000,
   /** One-time share durations offered to the recipient (minutes). */
-  onceMinutes: [15, 60] as readonly number[],
+  onceMinutes: [15, 60, 240] as readonly number[],
   /** Hard cap on how long a received share is honoured. */
-  maxShareMs: 60 * 60_000,
+  maxShareMs: 4 * 3_600_000,
   noteMax: 80,
   placeMax: 60,
   /** Tolerated clock skew when a share arrives. */
@@ -93,6 +93,8 @@ export function askGate(entries: readonly AskEntry[], dir: AskEntry['dir'], peer
   for (const e of entries) {
     if (e.dir !== dir || e.peer !== peer || e.ask !== ask) continue;
     if (e.state === 'pending' && now - e.t < ASK.pendingMs) return 'pending';
+    // Once a 'where' ask was already answered, allow a follow-up if plans change without a 10-min lockout.
+    if (ask === 'where' && (e.state === 'answered' || e.state === 'dismissed')) continue;
     if (now - e.t < ASK.cooldownMs) gate = 'cooldown';
   }
   return gate;

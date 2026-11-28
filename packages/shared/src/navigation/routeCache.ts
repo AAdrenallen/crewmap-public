@@ -19,7 +19,7 @@ export const ROUTE_CACHE = {
   /** A full discovery per O/D pair at most this often while its via cache is warm. */
   fullEveryMs: 7 * 86_400_000,
   /** Straight-line trips shorter than this get one Directions call (alternatives barely differ). */
-  shortTripM: 3000,
+  shortTripM: 1000,
 };
 
 const M_PER_DEG = 111_195;

@@ -23,13 +23,21 @@ export const hasMapboxToken = (): boolean => MAPBOX_TOKEN.startsWith('pk.');
 
 const API = 'https://api.mapbox.com';
 
+const HTTP_TIMEOUT_MS = 12_000;
+
 /** Every Mapbox request goes through here: one daily counter per API (D60, Settings → Help → Diagnostics). */
 async function getJson<T>(url: string): Promise<T> {
   const kind = apiKindOf(url);
   if (kind) countRequest(kind, apiUnitsOf(url));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Mapbox ${res.status}`);
-  return (await res.json()) as T;
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctl.signal });
+    if (!res.ok) throw new Error(`Mapbox ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(to);
+  }
 }
 
 /** Directions `driving-traffic` with alternatives, banner/voice instructions and maxspeed/congestion annotations. */
@@ -97,7 +105,8 @@ export async function searchForward(q: string, near: LatLng | null, lang: 'en' |
 }
 
 async function searchForwardNet(q: string, near: LatLng | null, lang: 'en' | 'fr' | 'ru'): Promise<SearchResult[]> {
-  const p = new URLSearchParams({ q, access_token: MAPBOX_TOKEN, language: lang, limit: '8', country: 'ca' });
+  // Proximity bias ranks local results first without blocking US/cross-border destinations.
+  const p = new URLSearchParams({ q, access_token: MAPBOX_TOKEN, language: lang, limit: '8' });
   if (near) p.set('proximity', `${near.lng},${near.lat}`);
   const res = await getJson<{
     features: { id?: string; properties: { mapbox_id: string; name: string; full_address?: string; place_formatted?: string; poi_category?: string[] }; geometry: { coordinates: [number, number] } }[];

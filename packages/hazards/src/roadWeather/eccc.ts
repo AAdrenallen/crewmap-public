@@ -51,6 +51,7 @@ const Props = z.object({
   expiration_datetime: z.string().nullish(),
   event_end_datetime: z.string().nullish(),
 });
+const Feature = z.object({ properties: Props, geometry: Geometry });
 const FC = z.object({ type: z.literal('FeatureCollection'), features: z.array(z.unknown()) });
 
 export function ecccCategory(name: string, type: string, text: string | null | undefined): RoadWeatherCategory | null {
@@ -83,7 +84,7 @@ export function normaliseEccc(raw: unknown, now: number): WeatherAlert[] | null 
   if (!fc.success) return null;
   const byKey = new Map<string, WeatherAlert>();
   for (const f of fc.data.features) {
-    const o = z.object({ properties: Props, geometry: Geometry }).safeParse(f);
+    const o = Feature.safeParse(f);
     if (!o.success) continue;
     const p = o.data.properties;
     if (p.status_en === 'ended') continue;
@@ -94,12 +95,18 @@ export function normaliseEccc(raw: unknown, now: number): WeatherAlert[] | null 
     if (issuedAt === null || !Number.isFinite(expiresAt) || expiresAt <= now) continue;
     const g = o.data.geometry;
     const polys: Rings[] = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).map((rs) => rs.map((r) => r.map((c) => [c[0], c[1]] as [number, number])));
+    const pb = ringsBbox(polys);
     const key = `eccc:${p.alert_code}:${p.publication_datetime}`;
     const cur = byKey.get(key);
     if (cur) {
       cur.polygons.push(...polys);
       cur.expiresAt = Math.max(cur.expiresAt, expiresAt);
-      cur.bbox = ringsBbox(cur.polygons);
+      cur.bbox = {
+        south: Math.min(cur.bbox.south, pb.south),
+        north: Math.max(cur.bbox.north, pb.north),
+        west: Math.min(cur.bbox.west, pb.west),
+        east: Math.max(cur.bbox.east, pb.east),
+      };
     } else {
       byKey.set(key, {
         key,
@@ -107,7 +114,7 @@ export function normaliseEccc(raw: unknown, now: number): WeatherAlert[] | null 
         nameEn: p.alert_short_name_en ?? p.alert_name_en,
         nameFr: p.alert_short_name_fr ?? p.alert_name_fr ?? p.alert_name_en,
         polygons: polys,
-        bbox: ringsBbox(polys),
+        bbox: pb,
         issuedAt,
         expiresAt,
       });

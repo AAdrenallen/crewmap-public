@@ -87,7 +87,8 @@ export const DRIVING_THRESHOLDS = {
     speedingPerS: [0.05, 0.12, 0.3],
     phoneBase: 6,
     phonePerS: 0.2,
-    lateNight: 4,
+    /** Late-night driving is still recorded for Night Owl stats without penalizing the safety score. */
+    lateNight: 0,
     /** Penalties are normalised per this many km of driving (short trips aren't punished harder). */
     exposureKm: 20,
     /** score = 100·exp(−P / decay). P = 25 → ≈ 61. */

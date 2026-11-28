@@ -98,11 +98,14 @@ const drive: Omit<Theme, 'driving' | 'dark'> = {
   glass: 'rgba(14,18,32,0.96)',
 };
 
+const LIGHT_THEME: Theme = { ...light, driving: false, dark: false };
+const DARK_THEME: Theme = { ...dark, driving: false, dark: true };
+const DRIVE_THEME: Theme = { ...drive, driving: true, dark: true };
+
 export function useTheme(): Theme {
   const scheme = useColorScheme();
   const driving = useApp((s) => s.driving || s.nav?.active === true);
-  const isDark = driving || scheme === 'dark';
-  return { ...(driving ? drive : isDark ? dark : light), driving, dark: isDark };
+  return driving ? DRIVE_THEME : scheme === 'dark' ? DARK_THEME : LIGHT_THEME;
 }
 
 export const radius = { xs: 6, s: 10, m: 16, l: 24, xl: 32, pill: 999 } as const;

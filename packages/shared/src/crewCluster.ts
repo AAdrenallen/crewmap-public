@@ -3,11 +3,11 @@ import { haversineM, type LatLng } from './geo';
 /** Tunables for crew clusters on the home map (D55). Pixels are layout dp. */
 export const CLUSTER = {
   /** Markers closer than this on screen merge into one cluster (a friend sprite is ~64 dp wide). */
-  overlapPx: 52,
+  overlapPx: 62,
   /** While navigating/driving: markers carry a bigger touch target, but clusters stay small (declutter). */
-  overlapPxDriving: 64,
-  /** Everyone within this many metres of each other counts as one spot (same building): group scene. */
-  sameSpotM: 25,
+  overlapPxDriving: 68,
+  /** Everyone within this many metres of each other counts as one spot (same building/lot incl. indoor GPS drift): group scene. */
+  sameSpotM: 60,
   /** Tapping a cluster never zooms in further than this. */
   maxZoom: 19,
   /** At or above (maxZoom - this), a tap opens the list instead of zooming. */
@@ -48,7 +48,52 @@ export function clusterByPixels(points: ScreenPoint[], radiusPx: number): string
   const groups = new Map<number, string[]>();
   pts.forEach((p, i) => {
     const root = find(i);
-    groups.set(root, [...(groups.get(root) ?? []), p.id]);
+    let g = groups.get(root);
+    if (!g) groups.set(root, (g = []));
+    g.push(p.id);
+  });
+  return [...groups.values()].map((g) => g.sort()).sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+}
+
+export interface CrewPoint extends LatLng {
+  id: string;
+  x: number;
+  y: number;
+  /** Stationary / walking members merge by world `sameSpotM` even when zoomed all the way in. */
+  sameSpotOk?: boolean;
+}
+
+/**
+ * Combines screen-space overlap (`radiusPx`) AND world-space proximity (`sameSpotM` for non-driving members)
+ * so crewmates hanging out at the same venue always stay in a fun freeze-frame pose even at max zoom.
+ */
+export function clusterCrew(
+  points: CrewPoint[],
+  radiusPx: number = CLUSTER.overlapPx,
+  sameSpotM: number = CLUSTER.sameSpotM,
+): string[][] {
+  if (points.length === 0) return [];
+  const parent = points.map((_, i) => i);
+  const find = (i: number): number => {
+    while (parent[i] !== i) i = parent[i] = parent[parent[i]!]!;
+    return i;
+  };
+  const r2 = radiusPx * radiusPx;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!;
+    for (let j = i + 1; j < points.length; j++) {
+      const b = points[j]!;
+      const screenClose = Number.isFinite(a.x) && Number.isFinite(a.y) && Number.isFinite(b.x) && Number.isFinite(b.y) && (a.x - b.x) ** 2 + (a.y - b.y) ** 2 < r2;
+      const worldClose = a.sameSpotOk !== false && b.sameSpotOk !== false && haversineM(a, b) <= sameSpotM;
+      if (screenClose || worldClose) parent[find(i)] = find(j);
+    }
+  }
+  const groups = new Map<number, string[]>();
+  points.forEach((p, i) => {
+    const root = find(i);
+    let g = groups.get(root);
+    if (!g) groups.set(root, (g = []));
+    g.push(p.id);
   });
   return [...groups.values()].map((g) => g.sort()).sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
 }

@@ -3,7 +3,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as THREE from 'three';
 import { avatarKey, normalizeCar, rideKey, SPRITE_HEADINGS, type AvatarConfig, type CarConfig } from '@crewmap/shared/avatar';
 import { BakeBreaker, sheetFits } from './bakeGuard';
-import { buildAvatar, buildParked, buildRide, pose } from './kit';
+import { actionPose, buildAvatar, buildParked, buildRide, pose } from './kit';
 
 /**
  * On-device sprite baking (spike b decision): compose the avatar (or the avatar riding their vehicle) from the GLB
@@ -23,6 +23,7 @@ import { buildAvatar, buildParked, buildRide, pose } from './kit';
  */
 export const CELL = 192;
 export const AVATAR_FRAMES = 3; // idle, stride A, stride B
+export const POSE_SHEET_FRAMES = 8; // 8 expressive 3D group freeze-frame poses
 const SUPERSAMPLE = 2;
 // expo-gl has no renderbufferStorageMultisample; antialiasing comes from the SUPERSAMPLE downsample.
 const MSAA = 0;
@@ -47,6 +48,10 @@ export function avatarSheetFile(cfg: AvatarConfig): File {
 
 export function portraitFile(cfg: AvatarConfig): File {
   return new File(dir, `p-${SPRITE_VERSION}-${hash(avatarKey(cfg))}.png`);
+}
+
+export function poseSheetFile(cfg: AvatarConfig): File {
+  return new File(dir, `g-${SPRITE_VERSION}-${hash(avatarKey(cfg))}.png`);
 }
 
 export function rideSheetFile(avatar: AvatarConfig, car: CarConfig): File {
@@ -243,7 +248,19 @@ async function bakeOnce(opts: BakeOpts, drawCell: (col: number, row: number) => 
     scene.add(key, fill, rim);
     const model = await build();
     scene.add(model);
-    contactShadow(model, opts.shadow);
+    const shadowMesh = contactShadow(model, opts.shadow);
+    disposables.push(shadowMesh.geometry, shadowMesh.material as THREE.Material);
+    const shadowTex = (shadowMesh.material as THREE.MeshBasicMaterial).map;
+    if (shadowTex) disposables.push(shadowTex);
+    // Dispose per-bake cloned/toonified materials after snapshotting (geometries belong to the shared GLB cache).
+    const mats = new Set<THREE.Material>();
+    model.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (o === shadowMesh || !m) return;
+      if (Array.isArray(m)) for (const x of m) mats.add(x);
+      else mats.add(m);
+    });
+    for (const m of mats) disposables.push(m);
     // Map-like 3/4 camera: pitched ~30°, orthographic so every heading is the same size.
     const half = opts.half;
     const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 20);
@@ -270,6 +287,7 @@ async function bakeOnce(opts: BakeOpts, drawCell: (col: number, row: number) => 
         toneMapped: false,
       }),
     );
+    disposables.push(quad.geometry, quad.material as THREE.Material);
     quad.frustumCulled = false;
     const quadScene = new THREE.Scene();
     quadScene.add(quad);
@@ -314,8 +332,6 @@ async function bakeOnce(opts: BakeOpts, drawCell: (col: number, row: number) => 
       new File(typeof p.uri === 'string' ? p.uri : String(p.uri)).move(portrait);
     }
     if (__DEV__) console.log(`sprite bake ${out.name}: ${cols}×${rows} cells in ${Date.now() - t0} ms`);
-    quad.geometry.dispose();
-    (quad.material as THREE.Material).dispose();
     return out.uri;
   } finally {
     for (const d of disposables.reverse()) {
@@ -334,6 +350,9 @@ async function bakeOnce(opts: BakeOpts, drawCell: (col: number, row: number) => 
 }
 
 const AVATAR_VIEW = { half: 0.64, target: 0.48, shadow: 0.42 };
+/** Slightly wider framing so raised hands & mid-air star-jump limbs never clip on group freeze-frames. */
+export const POSE_HALF = 0.74;
+const POSE_VIEW = { half: POSE_HALF, target: 0.52, shadow: 0.42 };
 
 export async function avatarSheet(cfg: AvatarConfig): Promise<string> {
   const out = avatarSheetFile(cfg);
@@ -350,6 +369,25 @@ export async function avatarSheet(cfg: AvatarConfig): Promise<string> {
       },
       out,
       portraitFile(cfg),
+    );
+  });
+}
+
+/** Lazy 16×8 expressive pose sheet baked only when crewmates cluster into a freeze-frame scene. */
+export async function poseSheet(cfg: AvatarConfig): Promise<string> {
+  const out = poseSheetFile(cfg);
+  if (out.exists) return out.uri;
+  return enqueue(async () => {
+    if (out.exists) return out.uri;
+    let rig: Awaited<ReturnType<typeof buildAvatar>> | null = null;
+    return bake(
+      { cols: SPRITE_HEADINGS, rows: POSE_SHEET_FRAMES, ...POSE_VIEW },
+      (_c, row) => rig && actionPose(rig, row),
+      async () => {
+        rig = await buildAvatar(cfg);
+        return rig.root;
+      },
+      out,
     );
   });
 }

@@ -15,6 +15,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FUEL_GRADES } from '@crewmap/hazards';
 import { platform } from '@crewmap/platform';
 import { t, type Lang } from '@crewmap/shared/i18n';
 import { engine } from '../../core/engine';
@@ -182,6 +183,19 @@ export default function Settings() {
 
         <Group title={t('set.driving')} index={3}>
           <View style={styles.inset}>
+            <Text style={[styles.inLabel, { color: th.textSoft }]}>{t('set.mapTheme')}</Text>
+            <Segmented
+              testIDPrefix="map-theme-"
+              value={s.mapTheme ?? 'adaptive'}
+              onChange={(v) => set({ mapTheme: v as typeof s.mapTheme })}
+              options={[
+                { key: 'adaptive', label: t('set.mapAdaptive') },
+                { key: 'light', label: t('set.mapLight') },
+                { key: 'dark', label: t('set.mapDark') },
+              ]}
+            />
+          </View>
+          <View style={styles.inset}>
             <Text style={[styles.inLabel, { color: th.textSoft }]}>{t('set.voice')}</Text>
             <Segmented
               value={s.voice}
@@ -229,6 +243,17 @@ export default function Settings() {
           <SwitchRow testID="set-anon-publish" icon="warning" tint={palette.warn} label={t('set.anonPublish')} value={s.anonPublish} onChange={(v) => set({ anonPublish: v })} />
           <SwitchRow testID="set-anon-receive" icon="warning" tint={palette.warn} label={t('set.anonReceive')} value={s.anonReceive} onChange={(v) => set({ anonReceive: v })} />
           <SwitchRow testID="set-map-pois" icon="flame" tint={palette.pop} label={t('set.mapPois')} value={s.mapPois} onChange={(v) => set({ mapPois: v })} />
+          {s.mapPois && (
+            <View style={styles.inset}>
+              <Text style={[styles.inLabel, { color: th.textSoft }]}>{t('poi.fuel')}</Text>
+              <Segmented
+                testIDPrefix="fuel-grade-"
+                value={s.fuelGrade}
+                onChange={(v) => set({ fuelGrade: v as typeof s.fuelGrade })}
+                options={FUEL_GRADES.map((g) => ({ key: g, label: t(`fuel.${g}`) }))}
+              />
+            </View>
+          )}
           <SwitchRow testID="set-auto-faster" icon="volume" tint={palette.pop} label={t('set.autoFaster')} value={s.autoSwitchFaster} onChange={(v) => set({ autoSwitchFaster: v })} />
           <SwitchRow testID="set-parking" icon="car" tint={palette.brand} label={t('set.parking')} value={parking.enabled} onChange={(v) => void setParkingPrefs({ enabled: v })} />
           {parking.enabled && (
@@ -256,7 +281,7 @@ export default function Settings() {
               tint={palette.brand}
               label={t('set.overlay')}
               value={overlayOk ? t('set.overlayOn') : t('set.overlayOff')}
-              onPress={overlayOk ? undefined : () => void platform.navOverlay.requestPermission()}
+              onPress={() => void platform.navOverlay.requestPermission()}
             />
           )}
           {canOverlay && (
@@ -266,7 +291,7 @@ export default function Settings() {
               tint={palette.brand}
               label={t('set.navStatus')}
               value={navStatusOk ? t('set.navStatusOn') : t('set.navStatusOff')}
-              onPress={navStatusOk ? undefined : () => void platform.externalNavStatus.requestAccess()}
+              onPress={() => void platform.externalNavStatus.requestAccess()}
               last={musicApps.length === 0}
             />
           )}

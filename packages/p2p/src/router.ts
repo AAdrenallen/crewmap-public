@@ -118,11 +118,12 @@ export class Router {
   private readonly carrier: NostrCarrier;
   private readonly handlers = new Map<string, ((m: Incoming) => void)[]>();
   private readonly seenIds = new Set<string>();
-  private readonly seenOrder: string[] = [];
   private readonly pending = new Map<string, Pending>();
   private readonly lastSeen = new Map<string, number>();
-  private readonly deliveryListeners: ((r: DeliveryReport) => void)[] = [];
+  private readonly directRetry = new Map<string, { nextAt: number; step: number }>();
+  private readonly deliveryListeners = new Set<(r: DeliveryReport) => void>();
   private config: TransportConfig;
+  private pcRelays: string[];
   private readonly clock: Clock;
   private readonly retryMs: number[];
   private running = false;
@@ -135,6 +136,7 @@ export class Router {
   constructor(private readonly o: RouterOptions) {
     this.carrier = new NostrCarrier(o.pool, o.self.deviceId);
     this.config = o.config ?? { ...DEFAULT_TRANSPORT_CONFIG };
+    this.pcRelays = [...(o.pcRelays ?? [])];
     this.clock = o.clock ?? systemClock;
     this.retryMs = o.retryMs ?? [4000, 10_000, 20_000];
     o.direct?.onMessage((peer, bytes) => this.receive(bytes, 'direct', peer));
@@ -152,6 +154,14 @@ export class Router {
   /** Switch functions between P2P and the PC relay at runtime (no app changes). */
   setConfig(cfg: TransportConfig): void {
     this.config = { ...cfg };
+    if (this.running) this.resubscribe(Math.floor(this.clock.now() / 1000) - 600);
+  }
+
+  /** Update PC relay URLs at runtime without restarting the app. */
+  setPcRelays(relays: string[]): void {
+    const next = relays.filter(Boolean);
+    if (next.length === this.pcRelays.length && next.every((r, i) => r === this.pcRelays[i])) return;
+    this.pcRelays = next;
     if (this.running) this.resubscribe(Math.floor(this.clock.now() / 1000) - 600);
   }
 
@@ -188,7 +198,8 @@ export class Router {
     this.carrier.close();
     // Idle peer connections still send ICE consent checks every few seconds: a stopped router drops them.
     this.o.direct?.close();
-    for (const p of this.pending.values()) this.clock.clearTimeout(p.timer);
+    this.directRetry.clear();
+    for (const p of this.pending.values()) if (p.timer) this.clock.clearTimeout(p.timer);
     this.pending.clear();
   }
 
@@ -202,8 +213,9 @@ export class Router {
     };
   }
 
-  onDelivery(h: (r: DeliveryReport) => void): void {
-    this.deliveryListeners.push(h);
+  onDelivery(h: (r: DeliveryReport) => void): () => void {
+    this.deliveryListeners.add(h);
+    return () => this.deliveryListeners.delete(h);
   }
 
   /** Last time we heard anything from each peer. */
@@ -220,13 +232,15 @@ export class Router {
     const members = [...st.members.keys()].filter((m) => m !== this.o.self.deviceId);
     if (members.length === 0) return id;
     const direct = new Set(this.o.direct?.connected() ?? []);
+    let sentDirectCount = 0;
     for (const m of members) {
       if (direct.has(m) && this.o.direct!.send(m, env)) {
+        sentDirectCount++;
         this.stats.sentDirect++;
         this.stats.bytesOut += env.length;
       }
     }
-    const allDirect = members.every((m) => direct.has(m));
+    const allDirect = sentDirectCount === members.length;
     // Everyone got it directly: a durable kind keeps one relay copy for catch-up instead of one per relay.
     if (spec.durable || !allDirect) await this.viaNostr(kind, env, now, undefined, allDirect ? 1 : undefined);
     return id;
@@ -248,7 +262,8 @@ export class Router {
   private async transmit(peer: string, kind: Kind, env: Uint8Array, now: number): Promise<void> {
     const spec = KINDS[kind];
     let sentDirect = false;
-    if (this.o.direct?.connected().includes(peer)) {
+    // Signalling must always travel over Nostr so half-open direct channels never deadlock.
+    if (kind !== 'signal' && this.o.direct?.connected().includes(peer)) {
       sentDirect = this.o.direct.send(peer, env);
       if (sentDirect) {
         this.stats.sentDirect++;
@@ -262,7 +277,7 @@ export class Router {
   private async viaNostr(kind: Kind, env: Uint8Array, now: number, to?: string, maxRelays?: number): Promise<void> {
     const spec = KINDS[kind];
     const mode = this.config[spec.fn];
-    const all = mode === 'relay' ? (this.o.pcRelays ?? []) : (this.o.publicRelays ?? DEFAULT_PUBLIC_RELAYS);
+    const all = mode === 'relay' ? this.pcRelays : (this.o.publicRelays ?? DEFAULT_PUBLIC_RELAYS);
     const relays = maxRelays ? all.slice(0, maxRelays) : all;
     const opts = to ? { durable: spec.durable, ttlS: spec.ttlS, to } : { durable: spec.durable, ttlS: spec.ttlS };
     const ev = this.carrier.buildEvent(this.o.circle(), env, now, opts);
@@ -277,8 +292,7 @@ export class Router {
   private scheduleRetry(p: Pending): void {
     const delay = this.retryMs[p.attempts - 1];
     if (delay === undefined) {
-      p.timer = null;
-      this.clock.setTimeout(() => this.fail(p), 10_000);
+      p.timer = this.clock.setTimeout(() => this.fail(p), 10_000);
       return;
     }
     p.timer = this.clock.setTimeout(() => {
@@ -343,9 +357,18 @@ export class Router {
         this.stats.rejected++;
       }
     }
-    // Opportunistically open a direct link to peers we hear from over Nostr.
+    if (via === 'direct') this.directRetry.delete(m.sender);
+    // Opportunistically open a direct link to peers we hear from over Nostr, with exponential backoff on CGNAT failure.
     if (via !== 'direct' && this.o.direct && !this.o.direct.connected().includes(m.sender)) {
-      if (this.o.self.deviceId < m.sender) this.o.direct.connect(m.sender);
+      if (this.o.self.deviceId < m.sender) {
+        const retry = this.directRetry.get(m.sender);
+        if (!retry || now >= retry.nextAt) {
+          const step = retry ? Math.min(retry.step + 1, 5) : 0;
+          const backoffMs = Math.min(5 * 60_000, 15_000 * 2 ** step);
+          this.directRetry.set(m.sender, { nextAt: now + backoffMs, step });
+          this.o.direct.connect(m.sender);
+        }
+      }
     }
   }
 
@@ -359,15 +382,17 @@ export class Router {
     const set = new Set<string>();
     const modes = new Set(Object.values(this.config));
     if (modes.has('p2p')) for (const r of this.o.publicRelays ?? DEFAULT_PUBLIC_RELAYS) set.add(r);
-    if (modes.has('relay')) for (const r of this.o.pcRelays ?? []) set.add(r);
+    if (modes.has('relay')) for (const r of this.pcRelays) set.add(r);
     return [...set];
   }
 
   private markSeen(id: string): boolean {
     if (this.seenIds.has(id)) return true;
     this.seenIds.add(id);
-    this.seenOrder.push(id);
-    if (this.seenOrder.length > 10_000) this.seenIds.delete(this.seenOrder.shift()!);
+    if (this.seenIds.size > 10_000) {
+      const oldest = this.seenIds.values().next().value;
+      if (oldest !== undefined) this.seenIds.delete(oldest);
+    }
     return false;
   }
 }

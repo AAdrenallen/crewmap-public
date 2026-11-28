@@ -26,7 +26,7 @@ export const PARKING = {
   arrivedM: 20,
   /** "Forget after" choices in hours; 0 = keep until the next drive. */
   forgetAfterOptionsH: [12, 24, 72, 0] as readonly number[],
-  defaultForgetAfterH: 24,
+  defaultForgetAfterH: 72,
   /** Note length (level / spot). */
   noteMax: 80,
 } as const;

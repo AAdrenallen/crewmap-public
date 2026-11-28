@@ -46,23 +46,25 @@ const S = {
 export const PlacesLayer = memo(function PlacesLayer({ onPress }: { onPress: (p: Place) => void }) {
   const places = useApp((s) => s.places);
   const me = useApp((s) => s.me?.deviceId);
-  const friends = useApp((s) => s.friends);
-  const shape = useMemo(
-    () => ({
+  // Select only owner initials as a primitive string so friend GPS fixes never rebuild the Places GeoJSON.
+  const ownerInitials = useApp((s) =>
+    s.places.map((p) => (s.allFriends[p.owner]?.profile.name ?? '').slice(0, 1).toUpperCase()).join('|'),
+  );
+  const shape = useMemo(() => {
+    const initials = ownerInitials.split('|');
+    return {
       type: 'FeatureCollection' as const,
-      features: places.map((p) => {
+      features: places.map((p, i) => {
         const friend = p.owner !== me;
-        const ownerName = friends[p.owner]?.profile.name ?? '';
         return {
           type: 'Feature' as const,
           id: p.id,
-          properties: { id: p.id, color: p.color, name: p.name, icon: `pl-${p.type}`, r10: px(p.radiusM, p.lat, 10), r20: px(p.radiusM, p.lat, 20), friend, ownerColor: ownerColor(p.owner), initial: ownerName.slice(0, 1).toUpperCase() },
+          properties: { id: p.id, color: p.color, name: p.name, icon: `pl-${p.type}`, r10: px(p.radiusM, p.lat, 10), r20: px(p.radiusM, p.lat, 20), friend, ownerColor: ownerColor(p.owner), initial: initials[i] ?? '' },
           geometry: { type: 'Point' as const, coordinates: [p.lng, p.lat] },
         };
       }),
-    }),
-    [places, me, friends],
-  );
+    };
+  }, [places, me, ownerInitials]);
   const press = useCallback(
     (e: { features: GeoJSON.Feature[] }) => {
       const id = e.features[0]?.properties?.id as string | undefined;

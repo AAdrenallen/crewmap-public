@@ -188,11 +188,68 @@ export async function buildAvatar(cfg: AvatarConfig, clock?: FinishClock): Promi
 
 /** Walk-cycle pose: phase 0 = idle, ±1 = stride. */
 export function pose(rig: AvatarRig, phase: number): void {
+  rig.root.position.set(0, 0, 0);
+  rig.root.rotation.set(0, 0, 0);
   const a = 0.45 * phase;
   if (rig.legL) rig.legL.rotation.set(a, 0, 0);
   if (rig.legR) rig.legR.rotation.set(-a, 0, 0);
   if (rig.armL) rig.armL.rotation.set(-a * 0.8, 0, 0);
   if (rig.armR) rig.armR.rotation.set(a * 0.8, 0, 0);
+}
+
+/**
+ * Expressive 3D freeze-frame action poses (0..7) for crew clusters:
+ *  0: Victory Cheer (both arms raised overhead in a V)
+ *  1: High-Five Jump (one arm high, excited mid-air stride)
+ *  2: Big Wave (high waving arm + relaxed hip hand)
+ *  3: Star Jump (airborne wide arms & split legs)
+ *  4: Superhero / Power Stance (wide legs, proud arms out)
+ *  5: Dance Boogie (funky asymmetric party arms & step)
+ *  6: Selfie / Peace Reach (one arm forward + one arm up)
+ *  7: Hype Kick (celebratory high kick + pumped arms)
+ */
+export function actionPose(rig: AvatarRig, action: number): void {
+  const set = (
+    armL: [number, number],
+    armR: [number, number],
+    legL: [number, number],
+    legR: [number, number],
+    liftY = 0,
+    tiltZ = 0,
+  ) => {
+    rig.root.position.set(0, liftY, 0);
+    rig.root.rotation.set(0, 0, tiltZ);
+    rig.armL?.rotation.set(armL[0], 0, armL[1]);
+    rig.armR?.rotation.set(armR[0], 0, armR[1]);
+    rig.legL?.rotation.set(legL[0], 0, legL[1]);
+    rig.legR?.rotation.set(legR[0], 0, legR[1]);
+  };
+  switch (action % 8) {
+    case 0:
+      set([-2.78, -0.38], [-2.78, 0.38], [-0.12, -0.22], [0.12, 0.22], 0.03, 0);
+      break;
+    case 1:
+      set([0.52, -0.32], [-2.68, 0.28], [0.48, -0.12], [-0.62, 0.14], 0.05, -0.06);
+      break;
+    case 2:
+      set([-2.62, -0.48], [-0.28, 0.52], [0.08, -0.18], [-0.08, 0.18], 0, 0.05);
+      break;
+    case 3:
+      set([-2.38, -0.76], [-2.38, 0.76], [-0.18, -0.5], [-0.18, 0.5], 0.07, 0);
+      break;
+    case 4:
+      set([0.12, -0.66], [0.12, 0.66], [0, -0.28], [0, 0.28], 0, 0);
+      break;
+    case 5:
+      set([-2.15, -0.52], [-0.85, 0.68], [-0.55, -0.22], [0.38, 0.22], 0.02, -0.07);
+      break;
+    case 6:
+      set([-2.42, -0.36], [-1.22, -0.14], [0.18, -0.2], [-0.22, 0.16], 0, 0.06);
+      break;
+    default:
+      set([-2.48, -0.46], [-2.48, 0.46], [0.22, -0.14], [-1.08, 0.2], 0.04, -0.05);
+      break;
+  }
 }
 
 function riderPose(rig: AvatarRig, p: RiderPose): void {

@@ -126,6 +126,10 @@ export class OcmSource {
         return false;
       }
       this.areas.set(k, { at: now, items: got });
+      if (this.areas.size > 40) {
+        const oldest = this.areas.keys().next().value;
+        if (oldest !== undefined) this.areas.delete(oldest);
+      }
       this.tracker.ok(now);
       return true;
     } catch (e) {

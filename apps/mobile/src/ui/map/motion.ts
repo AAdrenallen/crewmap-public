@@ -25,6 +25,9 @@ export const useSelfPose = create<{ pose: Pose | null; bearing: number | null }>
  */
 export function useSelfMotion(headingUp: boolean): void {
   const compass = useRef<{ filter: CompassFilter; onReading: (() => void) | null }>({ filter: new CompassFilter(), onReading: null });
+  const activeRef = useRef(AppState.currentState === 'active');
+  const [active, setActive] = useState(activeRef.current);
+
   useEffect(() => {
     const m = new MotionSmoother(SELF_MOTION);
     const sel = new BearingSelector();
@@ -33,18 +36,24 @@ export function useSelfMotion(headingUp: boolean): void {
     // and starts anywhere, so the clock is anchored at each fix and advanced at that rate.
     let anchor: { c: number; w: number } | null = null;
     const clock = () => (anchor ? anchor.c + (Date.now() - anchor.w) * replayRate() : Date.now());
+    const stopTimer = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
     const publish = () => {
       const now = clock();
       const pose = m.sample(now);
       const wall = Date.now();
       const bearing = sel.bearing(useApp.getState().fix?.speed ?? null, pose?.heading ?? null, compass.current.filter.value, wall);
       useSelfPose.setState({ pose, bearing });
-      if (!m.animating(now) && !sel.blending(wall) && timer) {
-        clearInterval(timer);
-        timer = null;
+      if (!activeRef.current || (!m.animating(now) && !sel.blending(wall))) {
+        stopTimer();
       }
     };
     const kick = () => {
+      if (!activeRef.current) return;
       if (!timer && (m.animating(clock()) || sel.blending(Date.now()))) timer = setInterval(publish, SELF_TICK_MS);
     };
     compass.current.onReading = () => {
@@ -61,26 +70,34 @@ export function useSelfMotion(headingUp: boolean): void {
       if (!anchor || now < f.t || now > f.t + RESYNC_MS * replayRate()) now = f.t;
       anchor = { c: now, w: Date.now() };
       m.push({ t: f.t, lat: f.lat, lng: f.lng, speed: f.speed, heading: f.heading }, now);
-      publish();
-      kick();
+      if (activeRef.current) {
+        publish();
+        kick();
+      }
     };
     onFix(useApp.getState());
     const unsub = useApp.subscribe((s, prev) => {
       if (s.fix !== prev.fix || s.nav?.route !== prev.nav?.route || s.nav?.active !== prev.nav?.active) onFix(s);
     });
+    const appSub = AppState.addEventListener('change', (st) => {
+      const fg = st === 'active';
+      activeRef.current = fg;
+      setActive(fg);
+      if (!fg) stopTimer();
+      else {
+        publish();
+        kick();
+      }
+    });
     return () => {
       unsub();
+      appSub.remove();
       compass.current.onReading = null;
-      if (timer) clearInterval(timer);
+      stopTimer();
     };
   }, []);
 
   // Compass only while heading-up and in the foreground (it keeps the magnetometer on).
-  const [active, setActive] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (st) => setActive(st === 'active'));
-    return () => sub.remove();
-  }, []);
   useEffect(() => {
     if (!headingUp || !active) return;
     const c = compass.current;
@@ -99,7 +116,7 @@ export interface FriendSample {
   hdg: number | null;
 }
 
-/** A friend's pose tweened between presence updates at FRIEND_TICK_MS; re-renders only the calling marker. */
+/** A friend's pose tweened between presence updates at FRIEND_TICK_MS; paused while backgrounded. */
 export function useFriendPose(p: FriendSample): Pose {
   const m = useRef<MotionSmoother | null>(null);
   if (!m.current) m.current = new MotionSmoother(FRIEND_MOTION);
@@ -108,18 +125,44 @@ export function useFriendPose(p: FriendSample): Pose {
     const sm = m.current!;
     const now = Date.now();
     sm.push({ t: now, lat: p.lat, lng: p.lng, speed: p.spd, heading: p.hdg }, now);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (id) {
+        clearInterval(id);
+        id = null;
+      }
+    };
     const tick = () => {
       const t = Date.now();
       const s = sm.sample(t);
-      if (s) setPose(s);
+      if (s) {
+        setPose((prev) =>
+          Math.abs(s.lat - prev.lat) < 1e-7 && Math.abs(s.lng - prev.lng) < 1e-7 && s.heading === prev.heading ? prev : s,
+        );
+      }
       return sm.animating(t);
     };
-    tick();
-    if (!sm.animating(now)) return;
-    const id = setInterval(() => {
-      if (!tick()) clearInterval(id);
-    }, FRIEND_TICK_MS);
-    return () => clearInterval(id);
+    const start = () => {
+      if (AppState.currentState !== 'active') return;
+      if (!tick()) {
+        stop();
+        return;
+      }
+      if (!id) {
+        id = setInterval(() => {
+          if (AppState.currentState !== 'active' || !tick()) stop();
+        }, FRIEND_TICK_MS);
+      }
+    };
+    start();
+    const appSub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') start();
+      else stop();
+    });
+    return () => {
+      appSub.remove();
+      stop();
+    };
   }, [p.key, p.lat, p.lng, p.spd, p.hdg]);
   return pose;
 }

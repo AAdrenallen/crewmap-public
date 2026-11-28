@@ -3,9 +3,10 @@ import { platform, type MediaOpenResult } from '@crewmap/platform';
 import { t } from '@crewmap/shared/i18n';
 import { useTheme } from '../theme';
 import { MusicIcon } from './MusicIcons';
+import { useMusicUi } from './musicState';
 
 export interface MusicButtonProps {
-  /** Player to open; default: preferred → active session → first installed. */
+  /** Player to target; default: preferred → active session → first installed. */
   pkg?: string;
   /** Diameter in dp (≥ 64 while driving). */
   size?: number;
@@ -14,24 +15,42 @@ export interface MusicButtonProps {
   testID?: string;
 }
 
-/** Opens the music app beside CrewMap (split screen), or full screen with the bubble when split isn't available. */
-export function MusicButton({ pkg, size = 64, onResult, style, testID = 'music-split' }: MusicButtonProps) {
+/** Toggles the comfortable in-app slide-in music player & playlist drawer (never splits the screen 50/50!). */
+export function MusicButton({ size = 64, style, testID = 'music-split' }: MusicButtonProps) {
   const th = useTheme();
+  const drawerOpen = useMusicUi((st) => st.drawerOpen);
+  const toggleDrawer = useMusicUi((st) => st.toggleDrawer);
+  const restoreCard = useMusicUi((st) => st.restoreCard);
   if (platform.os !== 'android') return null;
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={t('music.open')}
+      accessibilityState={{ expanded: drawerOpen }}
       hitSlop={8}
-      onPress={() => void platform.media.openSplit(pkg).then((r) => onResult?.(r))}
-      style={({ pressed }) => [s.btn, { width: size, height: size, borderRadius: size / 2, backgroundColor: th.glass, opacity: pressed ? 0.7 : 1 }, style]}
+      onPress={() => {
+        restoreCard();
+        toggleDrawer();
+      }}
+      style={({ pressed }) => [
+        s.btn,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: drawerOpen ? th.accent : th.glass,
+          borderColor: th.separator,
+          opacity: pressed ? 0.75 : 1,
+        },
+        style,
+      ]}
     >
-      <MusicIcon name="note" size={size * 0.44} color={th.text} />
+      <MusicIcon name="note" size={size * 0.44} color={drawerOpen ? th.onAccent : th.text} />
     </Pressable>
   );
 }
 
 const s = StyleSheet.create({
-  btn: { alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  btn: { alignItems: 'center', justifyContent: 'center', elevation: 4, borderWidth: StyleSheet.hairlineWidth },
 });

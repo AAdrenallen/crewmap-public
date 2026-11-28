@@ -294,9 +294,8 @@ export class Crews {
   }
 
   private dispatch(crewId: string, kind: Kind, m: Incoming, hs: Set<CrewHandler>): void {
-    // Symmetric: a crew we don't send emotes / arrivals to doesn't get to send them to us either.
-    // Check-in alerts (D66): only from a crewmate I opted in to (crew policy, or my override for them).
-    const pol = kind === 'check-in' ? this.effective(crewId, m.sender) : this.policy(crewId);
+    // Symmetric: apply crew policy + per-friend override so granted per-friend overrides work in both directions.
+    const pol = this.effective(crewId, m.sender);
     if (!kindAllowed(kind, pol) && kind !== 'hazards' && kind !== 'pois') return;
     for (const h of hs) h(m, crewId);
   }
@@ -451,7 +450,7 @@ export class Crews {
     let all: Record<string, FriendView> = {};
     for (const id of this.order) {
       const views = this.crews.get(id)?.net.friendViews() ?? {};
-      for (const [fid, v] of Object.entries(views)) all = { ...all, [fid]: mergeFriend(all[fid], v) };
+      for (const [fid, v] of Object.entries(views)) all[fid] = mergeFriend(all[fid], v);
     }
     for (const [fid, v] of Object.entries(all)) all[fid] = { ...v, etaS: prev[fid]?.etaS ?? null, routeM: prev[fid]?.routeM ?? null };
     all = withOnceShares(all, useAsks.getState().entries, Date.now());
@@ -796,12 +795,17 @@ export class Crews {
       }
     }
     const cur = useApp.getState().allFriends;
+    let next: Record<string, FriendView> | null = null;
     for (const f of inputs) {
       const etaS = displayEtaS(this.etaBase.get(f.id), fix, f.pos, now, f.navEtaToMe);
       const routeM = this.etaRouteM.get(f.id) ?? null;
       const was = cur[f.id];
-      if (was && (was.etaS !== etaS || was.routeM !== routeM)) this.patchFriend(f.id, { etaS, routeM });
+      if (was && (was.etaS !== etaS || was.routeM !== routeM)) {
+        next ??= { ...cur };
+        next[f.id] = { ...was, etaS, routeM };
+      }
     }
+    if (next) useApp.getState().set({ allFriends: next, friends: this.filtered(next) });
   }
 }
 

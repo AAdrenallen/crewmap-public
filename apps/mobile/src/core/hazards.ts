@@ -10,6 +10,7 @@ import {
   buildAnonVote,
   geohashEncode,
   geohashesAlong,
+  decodeBodyText,
   withConditionalGet,
   type AnonEvent,
   canonicalConfig,
@@ -33,7 +34,7 @@ import {
   type SpendLedger,
 } from '@crewmap/hazards';
 import { b64, DEFAULT_PUBLIC_RELAYS, fromUtf8, sodium, unb64, utf8, type DeviceIdentity, type NostrEvent, type NostrFilter } from '@crewmap/p2p';
-import { bboxOf, cumulativeDistances, projectOnPolyline, type BBox } from '@crewmap/shared/geo';
+import { bboxOf, projectOnPolyline, type BBox } from '@crewmap/shared/geo';
 import { lang, t, type I18nKey } from '@crewmap/shared/i18n';
 import { formatDistance } from '@crewmap/shared/units';
 import { countRequest } from './apiBudget';
@@ -42,15 +43,63 @@ import type { Crews } from './crews';
 import { isMuted } from './friendPrefs';
 import { notify } from './notify';
 import { Pois } from './pois';
+import { wiki } from './placeInfo';
 import { useApp } from './store';
 import { roadWeather } from './roadWeather';
 
+const HTTP_TIMEOUT_MS = 12_000;
 const http: HttpGet = async (url, headers) => {
-  const res = await fetch(url, { headers: headers ?? {} });
-  return { status: res.status, headers: res.headers, json: () => res.json(), text: () => res.text() };
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers: headers ?? {}, signal: ctl.signal });
+    // Read bytes inside the timeout & transparently gunzip `.geojson.gz` responses that OkHttp leaves compressed.
+    let cachedText: Promise<string> | null = null;
+    const readText = () => {
+      if (!cachedText) {
+        cachedText = res
+          .arrayBuffer()
+          .then((buf) => decodeBodyText(new Uint8Array(buf)))
+          .finally(() => clearTimeout(to));
+      }
+      return cachedText;
+    };
+    if (res.status !== 200) clearTimeout(to);
+    return {
+      status: res.status,
+      headers: res.headers,
+      text: readText,
+      json: async () => JSON.parse(await readText()) as unknown,
+    };
+  } catch (e) {
+    clearTimeout(to);
+    throw e;
+  }
 };
 /** Official feeds go through conditional GET (ETag / Last-Modified; D44). */
 const feedHttp = withConditionalGet(http);
+const CELLULAR_CHORE_EVERY_MS = 10 * 60_000;
+const HAZARD_SHARE_MAX_BYTES = 28_000;
+
+/** Pack hazards under the Nostr relay payload limit (dropping verbose lines if needed so relays never reject). */
+function packHazards(list: Hazard[]): Uint8Array {
+  const out: Hazard[] = [];
+  let bytes = 2;
+  for (const h of list) {
+    let raw = JSON.stringify(h);
+    let item = h;
+    if (raw.length > 1200 && h.line) {
+      const { line: _line, ...slim } = h;
+      item = slim;
+      raw = JSON.stringify(item);
+    }
+    const n = utf8(raw).length + 1;
+    if (bytes + n > HAZARD_SHARE_MAX_BYTES) break;
+    out.push(item);
+    bytes += n;
+  }
+  return utf8(JSON.stringify(out));
+}
 
 /** Paid-fallback spend persisted per calendar month. */
 class KvLedger implements SpendLedger {
@@ -103,14 +152,35 @@ export class Hazards {
   private anonSub: { close(): void } | null = null;
   private anonKey = '';
   private lastIdleCycle = 0;
+  private lastCellularChore = 0;
   private readonly mapboxFirstSeen = new Map<string, number>();
   private readonly notified = new Set<string>();
   private notifyPrimed = false;
   private lastNotifyAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private viewportTimer: ReturnType<typeof setTimeout> | null = null;
   private offs: (() => void)[] = [];
-  /** Visible map bounds, set by the map screen while it's open. */
-  viewport: BBox | null = null;
+  private _viewport: BBox | null = null;
+
+  /** Visible map bounds, set by the map screen while it's open; panning immediately updates cached POIs & fetches uncached local stations/prices. */
+  get viewport(): BBox | null {
+    return this._viewport;
+  }
+  set viewport(b: BBox | null) {
+    this._viewport = b;
+    if (!b) return;
+    if (this.viewportTimer) clearTimeout(this.viewportTimer);
+    this.viewportTimer = setTimeout(() => {
+      this.viewportTimer = null;
+      this.publish();
+      const s = useApp.getState();
+      if (s.settings.mapPois && s.online && poiArea(b)) {
+        void this.pois.ensureViewport(b, Date.now()).then((changed) => {
+          if (changed) this.publish();
+        });
+      }
+    }, 250);
+  }
 
   constructor(
     private readonly net: Crews,
@@ -157,24 +227,29 @@ export class Hazards {
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    if (this.viewportTimer) clearTimeout(this.viewportTimer);
+    this.viewportTimer = null;
     this.anonSub?.close();
     this.anonSub = null;
     this.anonKey = '';
+    this.pois.stop();
     for (const o of this.offs) o();
     this.offs = [];
   }
 
-  /** One-tap friend report while driving (no typing). */
-  report(type: FriendReportType): string | null {
+  /** One-tap friend report while driving (no typing), or at explicit coordinates when confirming a map hazard. */
+  report(type: FriendReportType, at?: { lat: number; lng: number; heading?: number | null }): string | null {
     const fix = useApp.getState().fix;
-    if (!fix) return null;
+    const pos = at ?? fix;
+    if (!pos) return null;
     const r: FriendReport = {
       id: `${this.me.deviceId.slice(0, 8)}-${Date.now().toString(36)}`,
       by: this.me.deviceId,
       type,
-      lat: fix.lat,
-      lng: fix.lng,
-      heading: fix.heading,
+      lat: pos.lat,
+      lng: pos.lng,
+      heading: at ? (at.heading ?? null) : (fix?.heading ?? null),
       street: null,
       at: Date.now(),
       votes: { [this.me.deviceId]: 1 },
@@ -245,7 +320,7 @@ export class Hazards {
     if (up && !hazardMemberIds.some((m) => m.startsWith('friends:'))) {
       const h = useApp.getState().hazards.find((x) => x.memberIds.some((m) => hazardMemberIds.includes(m)));
       if (h && (['police', 'speedTrap', 'hazard', 'accident', 'pothole', 'construction'] as string[]).includes(h.type)) {
-        const created = this.report(h.type as FriendReportType);
+        const created = this.report(h.type as FriendReportType, { lat: h.lat, lng: h.lng, heading: h.heading });
         if (created) undos.push(() => this.removeReports([created]));
       }
     }
@@ -334,7 +409,8 @@ export class Hazards {
   private async cycle(): Promise<void> {
     const s = useApp.getState();
     const now = Date.now();
-    const anyoneDriving = s.driving || Object.values(s.friends).some((f) => f.presence?.act === 'automotive' && now - f.presence.t < 10 * 60_000);
+    const allFriends = Object.values(s.allFriends);
+    const anyoneDriving = s.driving || allFriends.some((f) => f.presence?.act === 'automotive' && now - f.presence.t < 10 * 60_000);
     const mapOpen = this.viewport !== null;
     // Nobody driving, map closed: nothing to fetch for Waze and the chore-peer check (two native calls) is rarely
     // useful, so run the whole cycle every IDLE_CYCLE_MS instead of every 30 s.
@@ -346,37 +422,53 @@ export class Hazards {
       if (bbox) {
         this.lastWaze = now;
         const got = await this.service.fetchWaze({ bbox, now, reason: s.driving ? 'driving' : 'mapOpen' });
-        if (got.length) void this.net.router?.broadcast('hazards', utf8(JSON.stringify(got.slice(0, 150))));
+        if (got.length) void this.net.router?.broadcast('hazards', packHazards(got.slice(0, 150)));
         this.local = got;
       }
     }
     // Road-weather alerts for the route being navigated (D70): this phone only, it alone has the route.
     if (s.nav?.active && s.online) await roadWeather.refresh(s.nav.route, now);
     this.syncAnonSubscription(anyoneDriving || mapOpen || !!s.nav?.active);
-    // Official feeds: on the elected chore peer, only while someone drives or has the map open (none while idle; D44).
-    if ((anyoneDriving || mapOpen) && (await this.isChorePeer())) {
-      const pts = [s.fix, ...Object.values(s.friends).map((f) => f.presence)].filter((p): p is NonNullable<typeof p> => !!p);
+    // Official feeds: preferred on charging+Wi-Fi chore peer, with a conservative cellular fallback when nobody in the
+    // crew is on Wi-Fi+charging (solo drivers / road trips still get closures, road conditions, cameras & fuel).
+    if ((anyoneDriving || mapOpen) && (await this.isChorePeer(now))) {
+      const pts = [s.fix, ...allFriends.map((f) => f.presence)].filter((p): p is NonNullable<typeof p> => !!p);
       if (pts.length) {
         const bbox = s.nav?.route ? bboxOf(s.nav.route.geometry, 2000) : this.viewport ?? bboxOf(pts, 30_000);
         const qc = await this.service.fetchOfficial(bbox, now, anyoneDriving);
         if (this.osm.health().lastOkAt === now) void kvSet('osmCameras', this.osm.snapshot());
-        if (qc.length) void this.net.router?.broadcast('hazards', utf8(JSON.stringify(qc.slice(0, 200))));
+        if (qc.length) void this.net.router?.broadcast('hazards', packHazards(qc.slice(0, 200)));
         await this.pois.choreRefresh(bbox, s.fix ?? pts[0]!, now);
       }
+    }
+    // Ensure local fuel prices & OSM stations are populated on THIS phone whenever mapPois is on (never starved by chore-peer election).
+    if (s.settings.mapPois && s.online && (anyoneDriving || mapOpen)) {
+      const localBox = poiArea(this.viewport) ? this.viewport : s.fix ? bboxOf([s.fix], 15_000) : null;
+      if (localBox) await this.pois.ensureViewport(localBox, now);
     }
     this.net.doc.pruneReports((r) => reportAlive(r, now));
     this.publish();
   }
 
-  /** Chore peer: charging + on Wi-Fi, and the lowest daily hash among circle members currently charging. */
-  private async isChorePeer(): Promise<boolean> {
+  /** Chore peer: prefer charging + Wi-Fi; fall back to one elected active peer on cellular (≥ 10 min cadence) so solo drivers aren't starved. */
+  private async isChorePeer(now: number): Promise<boolean> {
     const [bat, netw] = await Promise.all([platform.power.battery(), platform.power.network()]);
-    if (!bat.charging || !netw.wifi) return false;
+    if (!netw.online) return false;
     const s = useApp.getState();
-    const day = Math.floor(Date.now() / 86_400_000);
+    const day = Math.floor(now / 86_400_000);
     const score = (id: string) => b64(sodium().crypto_generichash(8, utf8(`${id}|${day}`)));
-    const candidates = [this.me.deviceId, ...Object.values(s.friends).filter((f) => f.presence?.chg && Date.now() - f.presence.t < 30 * 60_000).map((f) => f.profile.deviceId)];
-    return candidates.sort((a, b) => score(a).localeCompare(score(b)))[0] === this.me.deviceId;
+    const activeFriends = Object.values(s.allFriends).filter((f) => f.presence && now - f.presence.t < 30 * 60_000);
+    const chargingFriends = activeFriends.filter((f) => f.presence?.chg).map((f) => f.profile.deviceId);
+    if (bat.charging && netw.wifi) {
+      const candidates = [this.me.deviceId, ...chargingFriends];
+      return candidates.sort((a, b) => score(a).localeCompare(score(b)))[0] === this.me.deviceId;
+    }
+    // Cellular fallback only when no crewmate appears to be home charging, and throttled to 10 min to protect battery/data.
+    if (chargingFriends.length > 0 || now - this.lastCellularChore < CELLULAR_CHORE_EVERY_MS) return false;
+    const candidates = [this.me.deviceId, ...activeFriends.map((f) => f.profile.deviceId)];
+    if (candidates.sort((a, b) => score(a).localeCompare(score(b)))[0] !== this.me.deviceId) return false;
+    this.lastCellularChore = now;
+    return true;
   }
 
   private publish(): void {
@@ -393,7 +485,13 @@ export class Hazards {
     const osmArea = s.nav?.route ? bboxOf(s.nav.route.geometry, 2000) : this.viewport;
     const osm = osmArea ? this.osm.cached(osmArea, now) : [];
     const merged = this.service.merged([...this.local, ...fromRoute, ...fromFriends, ...osm, ...this.anon.hazards(now)], now);
-    useApp.getState().set({ hazards: merged, hazardHealth: [...this.service.health(), ...this.pois.health(), ...roadWeather.health()], pois: poiArea(osmArea) ? this.pois.within(osmArea!, now) : [] });
+    // On intercity routes (> 1°×1.5°), keep POIs visible around the driver/viewport instead of wiping them out.
+    const poiBox = poiArea(osmArea) ? osmArea : poiArea(this.viewport) ? this.viewport : s.fix ? bboxOf([s.fix], 30_000) : null;
+    useApp.getState().set({
+      hazards: merged,
+      hazardHealth: [...this.service.health(), ...this.pois.health(), ...roadWeather.health(), wiki.health()],
+      pois: poiBox ? this.pois.within(poiBox, now) : [],
+    });
     this.notifyAhead(merged, now);
   }
 
@@ -401,7 +499,13 @@ export class Hazards {
   private notifyAhead(merged: MergedHazard[], now: number): void {
     const seen = this.notified;
     const fresh = merged.filter((h) => !seen.has(h.id));
-    for (const h of fresh) seen.add(h.id);
+    for (const h of fresh) {
+      seen.add(h.id);
+      if (seen.size > 2000) {
+        const oldest = seen.values().next().value;
+        if (oldest !== undefined) seen.delete(oldest);
+      }
+    }
     if (!this.notifyPrimed) {
       this.notifyPrimed = true; // hazards already known at startup are not new
       return;
@@ -412,7 +516,7 @@ export class Hazards {
     if (now - this.lastNotifyAt < NOTIFY_EVERY_MS) return;
     const line = nav.route.geometry;
     if (line.length < 2) return;
-    const cum = cumulativeDistances(line);
+    const cum = nav.route.cum;
     for (const h of fresh) {
       const by = h.reporters.filter((r) => r !== this.me.deviceId);
       if (by.length === 0 || by.every((r) => isMuted(r))) continue;

@@ -140,9 +140,16 @@ export function parseWazeResponse(body: unknown, now: number): ParsedWaze {
 
 export class ShapeError extends Error {}
 
+export function wazeEnv(b: BBox): 'na' | 'il' | 'row' {
+  const lat = (b.south + b.north) / 2;
+  const lng = (b.west + b.east) / 2;
+  if (lng >= 34 && lng <= 36 && lat >= 29 && lat <= 34) return 'il';
+  return lng < -30 ? 'na' : 'row';
+}
+
 export function wazeUrl(b: BBox): string {
   const f = (n: number) => n.toFixed(5);
-  return `${WAZE_LIVE_MAP_URL}?top=${f(b.north)}&bottom=${f(b.south)}&left=${f(b.west)}&right=${f(b.east)}&env=na&types=alerts,traffic`;
+  return `${WAZE_LIVE_MAP_URL}?top=${f(b.north)}&bottom=${f(b.south)}&left=${f(b.west)}&right=${f(b.east)}&env=${wazeEnv(b)}&types=alerts,traffic`;
 }
 
 /** Area key for throttling: bbox snapped to a ~5 km grid. */
@@ -197,7 +204,10 @@ export class WazeLiveMapSource implements HazardSource {
     this.tracker.attempt(ctx.now);
     let res: Awaited<ReturnType<HttpGet>>;
     try {
-      res = await this.http(wazeUrl(ctx.bbox), { Accept: 'application/json' });
+      res = await this.http(wazeUrl(ctx.bbox), {
+        Accept: 'application/json',
+        Referer: 'https://www.waze.com/live-map',
+      });
     } catch (e) {
       this.tracker.fail(ctx.now, 'degraded', `network: ${(e as Error).message}`);
       return prev?.hazards ?? [];
@@ -221,6 +231,10 @@ export class WazeLiveMapSource implements HazardSource {
     try {
       const parsed = parseWazeResponse(body, ctx.now);
       this.tracker.ok(ctx.now);
+      if (this.lastFetch.size >= 100) {
+        const oldest = this.lastFetch.keys().next().value;
+        if (oldest !== undefined) this.lastFetch.delete(oldest);
+      }
       this.lastFetch.set(key, { at: ctx.now, hazards: parsed.hazards, bbox: ctx.bbox });
       return parsed.hazards;
     } catch (e) {

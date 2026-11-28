@@ -24,12 +24,22 @@ export async function publishSealed(pool: RelayPool, relays: string[], topic: st
   return results.some((r) => r.status === 'fulfilled');
 }
 
-export function subscribeSealed(pool: RelayPool, relays: string[], topic: string, sinceS: number, cb: (sealed: Uint8Array) => void): { close(): void } {
+export function subscribeSealedMany(
+  pool: RelayPool,
+  relays: string[],
+  topics: string[],
+  sinceS: number,
+  cb: (sealed: Uint8Array) => void,
+): { close(): void } {
   const seen = new Set<string>();
-  return pool.subscribe(relays, { kinds: [KIND_DURABLE], '#t': [topic], since: sinceS }, {
+  return pool.subscribe(relays, { kinds: [KIND_DURABLE], '#t': topics, since: sinceS }, {
     onevent: (e) => {
       if (seen.has(e.id)) return;
       seen.add(e.id);
+      if (seen.size > 5000) {
+        const oldest = seen.values().next().value;
+        if (oldest !== undefined) seen.delete(oldest);
+      }
       try {
         cb(unb64(e.content));
       } catch {
@@ -37,4 +47,8 @@ export function subscribeSealed(pool: RelayPool, relays: string[], topic: string
       }
     },
   });
+}
+
+export function subscribeSealed(pool: RelayPool, relays: string[], topic: string, sinceS: number, cb: (sealed: Uint8Array) => void): { close(): void } {
+  return subscribeSealedMany(pool, relays, [topic], sinceS, cb);
 }

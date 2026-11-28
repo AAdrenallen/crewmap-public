@@ -143,8 +143,11 @@ export class Chat {
     // Ride mutes ('Mute {name}' / 'Mute all', until the ride ends) silence chat notices too.
     const muted = isMuted(m.from) || rideMuted(m.from);
     const foreground = AppState.currentState === 'active';
-    // Foreground: the chat bubble plus a quiet banner (unless that chat is open); background: one updating notification per conversation.
-    if (foreground) blipFor({ thread, from: m.from, name, kind: crewName ? 'chatCrew' : 'chat1', viewing, muted });
+    // Foreground: the chat bubble (with smooth message snippet unless previews are hidden) plus a quiet banner; background: one updating notification.
+    if (foreground) {
+      const preview = s.settings.hideChatPreviews ? t('notif.newMsg') : m.text;
+      blipFor({ thread, from: m.from, name, kind: crewName ? 'chatCrew' : 'chat1', viewing, muted, preview });
+    }
     if (!(foreground && viewing) && !muted && notifyMode('chat', ctx, next) !== 'skip') {
       const n = chatNotif(
         { title, text: m.text, unread: useApp.getState().chatUnread[thread] ?? 1, hidePreview: s.settings.hideChatPreviews },

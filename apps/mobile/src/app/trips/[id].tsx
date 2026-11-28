@@ -4,7 +4,8 @@ import { ActivityIndicator, BackHandler, ScrollView, StyleSheet, Text, View } fr
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, CircleLayer, LineLayer, MapView, ShapeSource } from '@rnmapbox/maps';
+import { Camera, CircleLayer, LineLayer, MapView, ShapeSource, StyleImport } from '@rnmapbox/maps';
+import { useMapLightPreset } from '../../ui/map/CrewMapView';
 import { bboxOf } from '@crewmap/shared/geo';
 import { replayAt, speedSeries, type RiskyEvent, type Trip } from '@crewmap/shared/driving';
 import { formatClock, formatKm, formatMinutes, formatSpeed } from '@crewmap/shared/units';
@@ -40,6 +41,7 @@ export default function TripDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const th = useTheme();
+  const mapPreset = useMapLightPreset();
   const l = lang();
   const cam = useRef<React.ElementRef<typeof Camera>>(null);
   const [trip, setTrip] = useState<Trip | null | undefined>(undefined);
@@ -99,15 +101,30 @@ export default function TripDetail() {
   const state = useMemo(() => (trip ? replayAt(trip.points, series, time) : null), [trip, series, time]);
 
   const segments = useMemo(() => {
-    if (!trip) return null;
-    return {
-      type: 'FeatureCollection' as const,
-      features: trip.points.slice(1).map((p, i) => ({
-        type: 'Feature' as const,
-        properties: { color: speedColor(p.speed * 3.6, p.limitKph) },
-        geometry: { type: 'LineString' as const, coordinates: [[trip.points[i]!.lng, trip.points[i]!.lat], [p.lng, p.lat]] },
-      })),
-    };
+    if (!trip || trip.points.length < 2) return null;
+    const features: { type: 'Feature'; properties: { color: string }; geometry: { type: 'LineString'; coordinates: [number, number][] } }[] = [];
+    let curColor = '';
+    let coords: [number, number][] = [];
+    for (let i = 1; i < trip.points.length; i++) {
+      const prev = trip.points[i - 1]!;
+      const p = trip.points[i]!;
+      const color = speedColor(p.speed * 3.6, p.limitKph);
+      if (color === curColor && coords.length > 0) {
+        coords.push([p.lng, p.lat]);
+      } else {
+        curColor = color;
+        coords = [
+          [prev.lng, prev.lat],
+          [p.lng, p.lat],
+        ];
+        features.push({
+          type: 'Feature',
+          properties: { color },
+          geometry: { type: 'LineString', coordinates: coords },
+        });
+      }
+    }
+    return { type: 'FeatureCollection' as const, features };
   }, [trip]);
   const pins = useMemo(
     () => ({
@@ -199,6 +216,7 @@ export default function TripDetail() {
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
         <View style={{ height: 320 }} testID="trip-map">
           <MapView style={{ flex: 1 }} styleURL="mapbox://styles/mapbox/standard" scaleBarEnabled={false} onMapLoadingError={onMapboxLoadingError} compassEnabled={false} onPress={() => setSelected(null)}>
+            <StyleImport id="basemap" existing config={{ lightPreset: mapPreset }} />
             <Camera ref={cam} defaultSettings={bounds ? { bounds } : undefined} />
             <ShapeSource id="trip" shape={segments}>
               <LineLayer id="trip-casing" slot="top" style={{ lineColor: '#FFFFFF', lineWidth: 9, lineCap: 'round', lineJoin: 'round', lineOpacity: 0.9 }} />

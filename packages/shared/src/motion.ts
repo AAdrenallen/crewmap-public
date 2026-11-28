@@ -86,6 +86,11 @@ function predictState(s: State, atMs: number, cfg: MotionConfig, track: MotionTr
     const hdg = haversineM(p, ahead) > 0.5 ? bearingDeg(p, ahead) : s.heading;
     return { ...p, heading: hdg };
   }
+  // Straight-line fast path avoids per-step spherical trig when not turning.
+  if (Math.abs(s.turnRate) < 1e-4) {
+    const p = dist > 1e-6 ? destination(here, s.heading!, dist) : here;
+    return { ...p, heading: s.heading! };
+  }
   // Constant turn rate and velocity, integrated in short steps.
   let p: LatLng = here;
   let h = s.heading!;

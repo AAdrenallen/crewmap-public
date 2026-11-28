@@ -16,8 +16,8 @@ class CrewmapSyncTaskService : HeadlessJsTaskService() {
   companion object {
     fun start(ctx: Context, reason: String): Boolean = try {
       val i = Intent(ctx, CrewmapSyncTaskService::class.java).putExtra("reason", reason)
-      HeadlessJsTaskService.acquireWakeLockNow(ctx)
       ctx.startService(i)
+      HeadlessJsTaskService.acquireWakeLockNow(ctx)
       true
     } catch (_: Throwable) {
       false

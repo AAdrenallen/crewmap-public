@@ -14,9 +14,12 @@ import type { FuelGrade, Poi } from './types';
 export const OSM_POI_REFRESH_MS = 30 * 86_400_000;
 export const OSM_POI_MAX_AGE_MS = 120 * 86_400_000;
 
+const FUEL_BRAND_RE = /^(sonic|ultramar|esso|shell|petro-canada|irving|harnois|crevier|p[eé]tro-t|costco\s+essence|canadian\s+tire\s+gas)/i;
+
 export function osmPoiQuery(b: BBox): string {
   const box = `${b.south},${b.west},${b.north},${b.east}`;
-  return `[out:json][timeout:25];nwr["amenity"~"^(fuel|charging_station)$"](${box});out center tags;`;
+  // Include shop/co-op stations tagged `fuel=yes` or known fuel brands (e.g. rural Sonic / Harnois dépanneur-stations).
+  return `[out:json][timeout:25];(nwr["amenity"~"^(fuel|charging_station)$"](${box});nwr["fuel"="yes"](${box});nwr["shop"]["brand"~"^(Sonic|Ultramar|Esso|Shell|Petro-Canada|Irving|Harnois|Crevier)$",i](${box}););out center tags;`;
 }
 
 const El = z.object({
@@ -61,7 +64,11 @@ export function normaliseOsmPois(elements: unknown[], bbox: BBox, now: number): 
     if (lat === undefined || lng === undefined) continue;
     if (lat < bbox.south || lat > bbox.north || lng < bbox.west || lng > bbox.east) continue;
     if (tags.access === 'private' || tags.access === 'no') continue;
-    const kind = tags.amenity === 'fuel' ? 'fuel' : tags.amenity === 'charging_station' ? 'charging' : null;
+    const isFuel =
+      tags.amenity === 'fuel' ||
+      yes(tags.fuel) ||
+      (!!tags.shop && FUEL_BRAND_RE.test((tags.brand ?? tags.name ?? '').trim()));
+    const kind = isFuel ? 'fuel' : tags.amenity === 'charging_station' ? 'charging' : null;
     if (!kind) continue;
     const brand = (tags.brand ?? tags.operator)?.trim();
     const street = [tags['addr:housenumber'], tags['addr:street']].filter(Boolean).join(' ');

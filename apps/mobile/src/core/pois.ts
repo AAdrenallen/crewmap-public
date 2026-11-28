@@ -20,6 +20,7 @@ import {
 } from '@crewmap/hazards';
 import { fromUtf8, utf8 } from '@crewmap/p2p';
 import { bboxOf, type BBox, type LatLng } from '@crewmap/shared/geo';
+import { lang } from '@crewmap/shared/i18n';
 import { countRequest } from './apiBudget';
 import { kvGet, kvSet } from './db';
 import type { Crews } from './crews';
@@ -43,6 +44,8 @@ export class Pois {
   private readonly shared = new SharedPois();
   private lastShare = 0;
   private sharedDirty = false;
+  private offRouter: (() => void) | null = null;
+  private ensuring: Promise<boolean> | null = null;
 
   constructor(
     http: HttpGet,
@@ -71,19 +74,26 @@ export class Pois {
     this.shared.restore(s, now);
     const router = this.net.router;
     if (router) {
-      router.on('pois', (m) => {
+      this.offRouter?.();
+      this.offRouter = router.on('pois', (m) => {
         if (this.shared.ingest(decodePois(fromUtf8(m.payload)), Date.now()) > 0) this.sharedDirty = true;
       });
     }
   }
 
+  stop(): void {
+    this.offRouter?.();
+    this.offRouter = null;
+  }
+
   health(): SourceHealth[] {
-    return [this.regie.health(), this.osm.health(), this.cams.health(), ...(this.ocm.enabled ? [this.ocm.health()] : [])];
+    return [this.regie.health(), this.osm.health(), this.cams.health(), this.ocm.health()];
   }
 
   /** Chore peer, while someone drives or has the map open. */
   async choreRefresh(area: BBox, centre: LatLng, now: number): Promise<void> {
-    const [r, o, c, k] = await Promise.all([this.regie.refresh(now), this.osm.refresh(area, now), this.cams.refresh(now), this.ocm.refresh(area, now)]);
+    const camLang = lang() === 'en' ? 'en' : 'fr';
+    const [r, o, c, k] = await Promise.all([this.regie.refresh(now), this.osm.refresh(area, now), this.cams.refresh(now, camLang), this.ocm.refresh(area, now)]);
     if (r) void kvSet('poi.regie', this.regie.snapshot());
     if (o) void kvSet('poi.osm', this.osm.snapshot());
     if (c) void kvSet('poi.cams', this.cams.snapshot());
@@ -97,11 +107,39 @@ export class Pois {
     }
   }
 
-/** User asked for fuel prices near `at`: fetch the Régie file directly when no fresh price is known around them (any phone). */
+  /** Ensure local fuel prices (10 min ETag cache) and OSM station pins (30 day cell cache) are loaded for the visible map area on any phone. */
+  async ensureViewport(area: BBox, now: number): Promise<boolean> {
+    if (!useApp.getState().online) return false;
+    if (this.ensuring) return this.ensuring;
+    const run = async (): Promise<boolean> => {
+      const camLang = lang() === 'en' ? 'en' : 'fr';
+      const osmSpanOk = area.north - area.south <= 0.65 && area.east - area.west <= 0.85;
+      const [r, o, c] = await Promise.all([
+        this.regie.refresh(now),
+        osmSpanOk ? this.osm.refresh(area, now) : Promise.resolve(false),
+        this.cams.refresh(now, camLang),
+      ]);
+      if (r) void kvSet('poi.regie', this.regie.snapshot());
+      if (o) void kvSet('poi.osm', this.osm.snapshot());
+      if (c) void kvSet('poi.cams', this.cams.snapshot());
+      return r || o || c;
+    };
+    this.ensuring = run().finally(() => {
+      this.ensuring = null;
+    });
+    return this.ensuring;
+  }
+
+  /** User asked for fuel prices near `at`: fetch the Régie file + local OSM stations directly when needed (any phone). */
   async ensureFuel(at: LatLng, now: number): Promise<void> {
     if (!useApp.getState().online) return;
-    if (!needsFuelFetch(this.near(at, POI_TUNING.searchRadiusM, now), now)) return;
-    if (await this.regie.refresh(now, ON_DEMAND_STALE_MS)) void kvSet('poi.regie', this.regie.snapshot());
+    const box = bboxOf([at], POI_TUNING.searchRadiusM);
+    const [r, o] = await Promise.all([
+      needsFuelFetch(this.near(at, POI_TUNING.searchRadiusM, now), now) ? this.regie.refresh(now, ON_DEMAND_STALE_MS) : Promise.resolve(false),
+      this.osm.refresh(box, now),
+    ]);
+    if (r) void kvSet('poi.regie', this.regie.snapshot());
+    if (o) void kvSet('poi.osm', this.osm.snapshot());
   }
 
   private local(b: BBox, now: number): Poi[] {

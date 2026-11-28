@@ -18,6 +18,7 @@ export * from './confidence';
 export * from './geohash';
 export * from './anon';
 export * from './conditional';
+export * from './gunzip';
 export * from './pois';
 export * from './roadWeather';
 export * from './info';

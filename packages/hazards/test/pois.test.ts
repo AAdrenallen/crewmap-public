@@ -1,9 +1,13 @@
 import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
+  decodeBodyText,
   decodePois,
   encodePois,
+  gunzipBytes,
   isFuelQuery,
+  isGzip,
   mergePois,
   needsFuelFetch,
   MtmdCameraSource,
@@ -40,8 +44,44 @@ describe('Régie essence Québec', () => {
   it('parses prices to tenths of a cent', () => {
     expect(parseCents('166.4¢')).toBe(1664);
     expect(parseCents('204,9 ¢')).toBe(2049);
+    expect(parseCents(164.9)).toBe(1649);
+    expect(parseCents('$1.689')).toBe(1689);
     expect(parseCents(null)).toBeNull();
     expect(parseCents('9.9¢')).toBeNull();
+  });
+
+  it('decompresses raw gzipped stations.geojson.gz payloads cleanly', () => {
+    const rawJson = JSON.stringify(regie);
+    const gz = new Uint8Array(gzipSync(Buffer.from(rawJson, 'utf8')));
+    expect(isGzip(gz)).toBe(true);
+    expect(new TextDecoder().decode(gunzipBytes(gz))).toBe(rawJson);
+    const decoded = JSON.parse(decodeBodyText(gz.buffer));
+    expect(normaliseRegie(decoded, 0)?.stations).toHaveLength(4);
+  });
+
+  it('accepts French grade names, numeric prices, and 3D coordinates', () => {
+    const custom = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [-73.6, 45.5, 32] },
+          properties: {
+            StationId: 's-fr-1',
+            Brand: 'Sonic',
+            Fuels: [
+              { FuelType: 'Ordinaire', Price: 162.9 },
+              { FuelType: 'Suprême', Price: '189,9' },
+            ],
+          },
+        },
+      ],
+    };
+    const r = normaliseRegie(custom, NOW)!;
+    expect(r.stations).toHaveLength(1);
+    expect(r.stations[0]!.brand).toBe('Sonic');
+    expect(r.stations[0]!.prices?.regular?.c10).toBe(1629);
+    expect(r.stations[0]!.prices?.premium?.c10).toBe(1899);
   });
 
   it('normalises the recorded feed, dropping unavailable grades', () => {
@@ -186,13 +226,16 @@ describe('OSM fuel and chargers', () => {
     expect(osmPoiQuery(MTL)).toContain('nwr["amenity"~"^(fuel|charging_station)$"](45.497,-73.575,45.507,-73.56)');
   });
 
-  it('normalises chargers and fuel stations', () => {
+  it('normalises chargers and fuel stations, including convenience-store fuel brands', () => {
     const fuelWay = { type: 'way', id: 7, center: { lat: 45.5, lon: -73.57 }, tags: { amenity: 'fuel', brand: 'Esso', 'fuel:octane_87': 'yes', 'fuel:diesel': 'yes', 'addr:housenumber': '1', 'addr:street': 'Rue Sainte-Catherine' } };
+    const sonicShop = { type: 'node', id: 9, lat: 45.502, lon: -73.568, tags: { shop: 'convenience', brand: 'Sonic', fuel: 'yes' } };
     const priv = { type: 'node', id: 8, lat: 45.5, lon: -73.57, tags: { amenity: 'fuel', access: 'private' } };
-    const ps = normaliseOsmPois([...osm.elements, fuelWay, priv], MTL, NOW);
+    const ps = normaliseOsmPois([...osm.elements, fuelWay, sonicShop, priv], MTL, NOW);
     expect(ps.filter((p) => p.kind === 'charging')).toHaveLength(3);
     const f = ps.find((p) => p.id === 'osm-poi:w7')!;
     expect(f).toMatchObject({ kind: 'fuel', brand: 'Esso', grades: ['regular', 'diesel'], address: '1 Rue Sainte-Catherine' });
+    const sonic = ps.find((p) => p.id === 'osm-poi:n9')!;
+    expect(sonic).toMatchObject({ kind: 'fuel', brand: 'Sonic' });
     expect(ps.find((p) => p.id === 'osm-poi:n8')).toBeUndefined();
   });
 

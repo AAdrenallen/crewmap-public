@@ -1,4 +1,4 @@
-import { pointAlong, projectOnPolyline, type LatLng } from '../geo';
+import { pointAlong, polylineChunks, projectNearPolyline, type LatLng } from '../geo';
 import type { NavRoute } from './route';
 
 /** External turn-by-turn apps CrewMap can hand a destination to (docs/DECISIONS.md: no Google/Waze data on our map). */
@@ -42,14 +42,14 @@ export function externalNavUrl(app: ExternalNavApp, dest: LatLng, via: LatLng[] 
  * other candidate, longest stretches first, returned in driving order. No other candidates → no vias.
  */
 export function shapingWaypoints(route: NavRoute, others: NavRoute[], cfg = EXTERNAL_NAV): LatLng[] {
-  const alts = others.filter((o) => o.id !== route.id && o.geometry.length > 1);
+  const alts = others.filter((o) => o.id !== route.id && o.geometry.length > 1).map((o) => ({ o, idx: polylineChunks(o.geometry, cfg.divergeM) }));
   if (alts.length === 0 || route.geometry.length < 2) return [];
   const total = route.cum[route.cum.length - 1] ?? 0;
   const stretches: { start: number; end: number }[] = [];
   let open: number | null = null;
   for (let s = 0; s <= total; s += cfg.sampleM) {
     const p = pointAlong(route.geometry, route.cum, s);
-    const far = alts.every((o) => projectOnPolyline(p, o.geometry, o.cum).distanceM > cfg.divergeM);
+    const far = alts.every(({ o, idx }) => projectNearPolyline(p, o.geometry, o.cum, idx) === null);
     if (far && open === null) open = s;
     if (!far && open !== null) {
       stretches.push({ start: open, end: s });

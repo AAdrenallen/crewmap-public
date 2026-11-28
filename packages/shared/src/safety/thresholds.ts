@@ -1,7 +1,7 @@
 /** Safety check-in tunables (D66). Covered by test/checkIn.test.ts. Units are SI unless the name says otherwise. */
 export const CHECK_IN = {
   /** Wait choices offered in Settings (min); the first is the default. */
-  waitChoicesMin: [5, 10, 15] as readonly number[],
+  waitChoicesMin: [5, 10, 15, 30, 60] as readonly number[],
   defaultWaitMin: 5,
   /** Unanswered this long after the ask → the opted-in crewmates are told. */
   graceS: 180,

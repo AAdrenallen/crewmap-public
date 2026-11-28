@@ -20,18 +20,37 @@ export const REGIE_REFRESH_MS = 10 * 60_000;
 /** Prices older than this are not shown. */
 export const REGIE_MAX_AGE_MS = 48 * 3600_000;
 
-const GRADE: Record<string, FuelGrade> = { 'Régulier': 'regular', Super: 'premium', Diesel: 'diesel' };
+const GRADE: Record<string, FuelGrade> = {
+  'Régulier': 'regular',
+  Regulier: 'regular',
+  Ordinaire: 'regular',
+  Regular: 'regular',
+  'Sans plomb': 'regular',
+  Super: 'premium',
+  'Suprême': 'premium',
+  Supreme: 'premium',
+  Premium: 'premium',
+  Diesel: 'diesel',
+  'Diésel': 'diesel',
+};
 
-const PriceRow = z.object({ GasType: z.string(), Price: z.string().nullable(), IsAvailable: z.boolean() });
+const PriceRow = z.object({
+  GasType: z.string().nullish(),
+  FuelType: z.string().nullish(),
+  Price: z.union([z.string(), z.number()]).nullish(),
+  IsAvailable: z.boolean().nullish(),
+});
 const Feature = z.object({
-  geometry: z.object({ type: z.literal('Point'), coordinates: z.tuple([z.number(), z.number()]) }),
+  geometry: z.object({ type: z.literal('Point'), coordinates: z.array(z.number()).min(2) }),
   properties: z.object({
     Name: z.string().nullish(),
     brand: z.string().nullish(),
+    Brand: z.string().nullish(),
     Status: z.string().nullish(),
     Address: z.string().nullish(),
     PostalCode: z.string().nullish(),
     Prices: z.array(PriceRow).nullish(),
+    Fuels: z.array(PriceRow).nullish(),
   }),
 });
 const FC = z.object({
@@ -40,14 +59,28 @@ const FC = z.object({
   features: z.array(z.unknown()),
 });
 
-/** "166.4¢" (optionally with spaces / comma) → 1664 tenths of a cent; null for junk or implausible values. */
-export function parseCents(v: string | null): number | null {
-  if (!v) return null;
-  const m = /(\d{2,3})(?:[.,](\d))?/.exec(v.replace(/\s/g, ''));
+/** "166.4¢" / 166.4 / "1,664 $" → 1664 tenths of a cent; null for junk or implausible values. */
+export function parseCents(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v) || v <= 0) return null;
+    const c10 = v < 10 ? Math.round(v * 1000) : Math.round(v * 10);
+    return c10 >= 500 && c10 <= 5000 ? c10 : null;
+  }
+  const clean = v.replace(/\s/g, '');
+  const dollar = /^\$?(\d)[.,](\d{2,3})\$?$/.exec(clean);
+  if (dollar) {
+    const frac = dollar[2]!.length === 2 ? Number(dollar[2]) * 10 : Number(dollar[2]);
+    const c10 = Number(dollar[1]) * 1000 + frac;
+    return c10 >= 500 && c10 <= 5000 ? c10 : null;
+  }
+  const m = /(\d{2,3})(?:[.,](\d))?/.exec(clean);
   if (!m) return null;
   const c10 = Number(m[1]) * 10 + Number(m[2] ?? 0);
   return c10 >= 500 && c10 <= 5000 ? c10 : null;
 }
+
+const CLOSED_RE = /ferm|clos|inact|hors\s+service|temporairement/i;
 
 export function normaliseRegie(raw: unknown, fallbackAt: number): { at: number; stations: Poi[] } | null {
   const fc = FC.safeParse(raw);
@@ -59,14 +92,17 @@ export function normaliseRegie(raw: unknown, fallbackAt: number): { at: number; 
     const p = Feature.safeParse(f);
     if (!p.success) continue;
     const pr = p.data.properties;
-    if (pr.Status && pr.Status !== 'En opération') continue;
-    const [lng, lat] = p.data.geometry.coordinates;
+    if (pr.Status && CLOSED_RE.test(pr.Status)) continue;
+    const lng = p.data.geometry.coordinates[0]!;
+    const lat = p.data.geometry.coordinates[1]!;
     const prices: Partial<Record<FuelGrade, FuelPrice>> = {};
-    for (const row of pr.Prices ?? []) {
-      const g = GRADE[row.GasType];
-      const c10 = row.IsAvailable ? parseCents(row.Price) : null;
+    for (const row of pr.Prices ?? pr.Fuels ?? []) {
+      const rawType = (row.GasType ?? row.FuelType)?.trim();
+      const g = rawType ? GRADE[rawType] : undefined;
+      const c10 = row.IsAvailable !== false ? parseCents(row.Price) : null;
       if (g && c10 !== null) prices[g] = { c10, at, source: 'regie' };
     }
+    const brandRaw = (pr.brand ?? pr.Brand)?.trim();
     const key = `${(pr.PostalCode ?? '').replace(/\s/g, '')}:${lat.toFixed(4)},${lng.toFixed(4)}`;
     stations.push({
       id: `regie:${key}`,
@@ -75,7 +111,7 @@ export function normaliseRegie(raw: unknown, fallbackAt: number): { at: number; 
       lat,
       lng,
       name: pr.Name?.trim() || null,
-      ...(pr.brand?.trim() ? { brand: pr.brand.trim() } : {}),
+      ...(brandRaw ? { brand: brandRaw } : {}),
       ...(pr.Address?.trim() ? { address: pr.Address.trim() } : {}),
       prices,
       at,

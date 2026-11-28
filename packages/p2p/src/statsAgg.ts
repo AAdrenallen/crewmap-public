@@ -20,6 +20,7 @@ const FIELDS: Record<Exclude<keyof StatsAgg, 'k' | 'score'>, { max: number; int:
   homeLeaves: { max: 100_000, int: true },
   homeReturns: { max: 100_000, int: true },
   noBrakeStreak: { max: 100_000, int: true },
+  topKph: { max: 500, int: true },
 };
 const PERIODS = ['week', 'month', 'all'] as const;
 

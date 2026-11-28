@@ -53,17 +53,42 @@ export interface PublishOptions {
 export class NostrCarrier {
   private subs: { close(): void }[] = [];
   private readonly seen = new Set<string>();
-  private readonly seenOrder: string[] = [];
+  private authorCache: { epoch: number; day: number; sk: Uint8Array } | null = null;
+  private topicCache = new Map<string, string>();
+  private topicCacheDay = -1;
+  private topicCacheEpoch = -1;
 
   constructor(
     private readonly pool: RelayPool,
     private readonly selfId: string,
   ) {}
 
+  private cachedAuthor(st: CircleState, day: number): Uint8Array {
+    if (this.authorCache && this.authorCache.epoch === st.epoch && this.authorCache.day === day) return this.authorCache.sk;
+    const sk = authorKey(st, st.epoch, this.selfId, day);
+    this.authorCache = { epoch: st.epoch, day, sk };
+    return sk;
+  }
+
+  private cachedTopic(st: CircleState, day: number, to?: string): string {
+    if (this.topicCacheDay !== day || this.topicCacheEpoch !== st.epoch) {
+      this.topicCache.clear();
+      this.topicCacheDay = day;
+      this.topicCacheEpoch = st.epoch;
+    }
+    const key = to ?? '';
+    let topic = this.topicCache.get(key);
+    if (!topic) {
+      topic = to ? recipientTopic(st, st.epoch, to, day) : circleTopic(st, st.epoch, day);
+      this.topicCache.set(key, topic);
+    }
+    return topic;
+  }
+
   buildEvent(st: CircleState, envelope: Uint8Array, now: number, opts: PublishOptions): NostrEvent {
     const day = dayIndex(now);
-    const sk = authorKey(st, st.epoch, this.selfId, day);
-    const tags: string[][] = [['t', opts.to ? recipientTopic(st, st.epoch, opts.to, day) : circleTopic(st, st.epoch, day)]];
+    const sk = this.cachedAuthor(st, day);
+    const tags: string[][] = [['t', this.cachedTopic(st, day, opts.to)]];
     if (opts.durable) tags.push(['expiration', String(Math.floor(now / 1000) + opts.ttlS)]);
     return finalizeEvent(
       { kind: opts.durable ? KIND_DURABLE : KIND_EPHEMERAL, created_at: Math.floor(now / 1000), tags, content: b64(envelope) },
@@ -116,8 +141,10 @@ export class NostrCarrier {
   private markSeen(id: string): boolean {
     if (this.seen.has(id)) return true;
     this.seen.add(id);
-    this.seenOrder.push(id);
-    if (this.seenOrder.length > 5000) this.seen.delete(this.seenOrder.shift()!);
+    if (this.seen.size > 5000) {
+      const oldest = this.seen.values().next().value;
+      if (oldest !== undefined) this.seen.delete(oldest);
+    }
     return false;
   }
 }

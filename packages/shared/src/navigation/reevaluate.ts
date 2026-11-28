@@ -17,8 +17,8 @@ export const REEVAL = {
   minGapMs: 90_000,
   /** No check right after starting (the preview just ran discovery). */
   startDelayMs: 2 * 60_000,
-  /** Hard cap per trip (cost guard: 40 checks ≈ 80 calls at worst). */
-  maxPerTrip: 40,
+  /** Hard cap per trip (covers multi-hour road trips even in heavy traffic). */
+  maxPerTrip: 120,
   /** Not worth it this close to the destination. */
   minRemainingS: 5 * 60,
   minRemainingM: 2000,
@@ -26,7 +26,7 @@ export const REEVAL = {
   saveMinS: 120,
   saveFrac: 0.08,
   /** A saving this many times the threshold is offered on the first check; smaller ones must hold for two checks. */
-  strongFactor: 2,
+  strongFactor: 1.35,
   /** Offer auto-dismiss, and how long a dismissed alternative stays suppressed. */
   offerTtlMs: 20_000,
   dismissSuppressMs: 10 * 60_000,
@@ -46,11 +46,21 @@ export const REEVAL = {
 };
 export type ReevalConfig = typeof REEVAL;
 
+function cumIndexAt(cum: readonly number[], alongM: number): number {
+  let lo = 0;
+  let hi = Math.max(0, cum.length - 1);
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid]! <= alongM) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /** Remaining geometry from an along-route position. */
 export function remainingLine(route: NavRoute, alongM: number): LatLng[] {
   const g = route.geometry;
-  let i = 0;
-  while (i < route.cum.length - 1 && route.cum[i + 1]! <= alongM) i++;
+  const i = cumIndexAt(route.cum, alongM);
   const a = g[i]!;
   const b = g[i + 1];
   if (!b) return [a];
@@ -73,7 +83,7 @@ export function jamAhead(route: NavRoute, alongM: number, cfg: ReevalConfig = RE
   let jamM = 0;
   let firstAtM: number | null = null;
   const end = alongM + cfg.lookAheadM;
-  for (let i = 0; i < route.cum.length - 1; i++) {
+  for (let i = cumIndexAt(route.cum, alongM); i < route.cum.length - 1; i++) {
     const s = route.cum[i]!;
     const e = route.cum[i + 1]!;
     if (e <= alongM) continue;
@@ -101,7 +111,7 @@ export function remainingS(route: NavRoute, alongM: number): number {
   const d = route.segDurationS;
   if (!d || d.length !== route.cum.length - 1) return route.distanceM > 0 ? route.durationS * Math.max(0, 1 - alongM / route.distanceM) : 0;
   let s = 0;
-  for (let i = 0; i < d.length; i++) {
+  for (let i = cumIndexAt(route.cum, alongM); i < d.length; i++) {
     const a = route.cum[i]!;
     const b = route.cum[i + 1]!;
     if (b <= alongM) continue;

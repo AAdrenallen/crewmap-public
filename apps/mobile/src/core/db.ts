@@ -46,6 +46,13 @@ const MIGRATIONS: string[] = [
    CREATE INDEX IF NOT EXISTS mem_events_t ON mem_events(t);
    CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY NOT NULL, start INTEGER NOT NULL, end_t INTEGER NOT NULL, json TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS memories_start ON memories(start);`,
+  // Query & purge indexes (eliminates full-table scans on retention purge, unread counts, and benchmarks).
+  `CREATE INDEX IF NOT EXISTS trips_ended ON trips(ended_at);
+   CREATE INDEX IF NOT EXISTS walks_ended ON walks(ended_at);
+   CREATE INDEX IF NOT EXISTS chat_t ON chat(t);
+   CREATE INDEX IF NOT EXISTS chat_unread ON chat(mine, read, thread);
+   CREATE INDEX IF NOT EXISTS bench_kind_t ON bench(kind, t);
+   CREATE INDEX IF NOT EXISTS visits_city_t ON visits(city, t);`,
 ];
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -53,13 +60,17 @@ let db: SQLite.SQLiteDatabase | null = null;
 export async function openDb(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
   const d = await SQLite.openDatabaseAsync('crewmap.db');
-  await d.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  await d.execAsync('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
   await d.execAsync('CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL);');
   const row = await d.getFirstAsync<{ v: number }>('SELECT v FROM schema_version LIMIT 1');
   let v = row?.v ?? 0;
-  for (; v < MIGRATIONS.length; v++) await d.execAsync(MIGRATIONS[v]!);
-  await d.execAsync('DELETE FROM schema_version;');
-  await d.runAsync('INSERT INTO schema_version (v) VALUES (?)', v);
+  if (v < MIGRATIONS.length) {
+    await d.withTransactionAsync(async () => {
+      for (; v < MIGRATIONS.length; v++) await d.execAsync(MIGRATIONS[v]!);
+      await d.execAsync('DELETE FROM schema_version;');
+      await d.runAsync('INSERT INTO schema_version (v) VALUES (?)', v);
+    });
+  }
   db = d;
   return d;
 }
@@ -142,8 +153,6 @@ export const ydocStore = (circleId: string) => ({
 // --- trips / walks / visits / history ------------------------------------------------------------------------------
 
 export async function saveTrip(t: Trip): Promise<void> {
-  const counts: Record<string, number> = {};
-  for (const e of t.events) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
   await the().runAsync(
     `INSERT OR REPLACE INTO trips (id, started_at, ended_at, distance_m, duration_s, top_kph, avg_kph, score, passenger, events, points, poly)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -182,16 +191,20 @@ export async function tripSummaries(since = 0): Promise<TripSummary[]> {
 
 export type TripListItem = TripSummary & { thumb: LatLng[] };
 
-/** Summaries plus the stored thumbnail polyline; never reads the full points column. */
+/** Summaries plus the stored thumbnail polyline in one query; never reads the full points column. */
 export async function tripList(): Promise<TripListItem[]> {
-  const [sums, polys] = await Promise.all([
-    tripSummaries(),
-    the().getAllAsync<{ id: string; poly: string | null }>('SELECT id, poly FROM trips'),
-  ]);
-  const byId = new Map(polys.map((r) => [r.id, r.poly]));
-  return sums.map((s) => {
-    const p = byId.get(s.id);
-    return { ...s, thumb: p ? decodePolyline(p, 5) : [] };
+  const rows = await the().getAllAsync<{
+    id: string; started_at: number; ended_at: number; distance_m: number; duration_s: number; top_kph: number;
+    avg_kph: number; score: number | null; passenger: number; events: string; poly: string | null;
+  }>('SELECT id, started_at, ended_at, distance_m, duration_s, top_kph, avg_kph, score, passenger, events, poly FROM trips ORDER BY started_at DESC');
+  return rows.map((r) => {
+    const counts: TripSummary['events'] = {};
+    for (const e of JSON.parse(r.events) as { kind: keyof TripSummary['events'] }[]) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+    return {
+      id: r.id, startedAt: r.started_at, endedAt: r.ended_at, distanceM: r.distance_m, durationS: r.duration_s,
+      topSpeedKph: r.top_kph, avgSpeedKph: r.avg_kph, score: r.score, passenger: r.passenger === 1, events: counts,
+      thumb: r.poly ? decodePolyline(r.poly, 5) : [],
+    };
   });
 }
 
@@ -272,19 +285,23 @@ export async function appendHistory(points: { t: number; lat: number; lng: numbe
   });
 }
 
-/** Retention purge (X2): drop raw history, trips, walks and visits older than `days`. */
+/** Retention purge (X2): drop raw history, trips, walks and visits older than `days` in one transaction. */
 export async function purgeOlderThan(days: number, now: number): Promise<{ history: number; trips: number }> {
   const cutoff = now - days * 86_400_000;
-  const h = await the().runAsync('DELETE FROM history WHERE t < ?', cutoff);
-  const t = await the().runAsync('DELETE FROM trips WHERE ended_at < ?', cutoff);
-  await the().runAsync('DELETE FROM walks WHERE ended_at < ?', cutoff);
-  await the().runAsync('DELETE FROM route_traces WHERE ended_at < ?', cutoff);
-  await the().runAsync('DELETE FROM visits WHERE t < ?', cutoff);
-  await the().runAsync('DELETE FROM hazards WHERE expires_at < ?', now);
-  await the().runAsync('DELETE FROM chat WHERE t < ?', cutoff);
-  await the().runAsync('DELETE FROM mem_tracks WHERE t < ?', cutoff);
-  await the().runAsync('DELETE FROM mem_events WHERE t < ?', cutoff);
-  return { history: h.changes, trips: t.changes };
+  let history = 0;
+  let trips = 0;
+  await tx(async () => {
+    history = (await the().runAsync('DELETE FROM history WHERE t < ?', cutoff)).changes;
+    trips = (await the().runAsync('DELETE FROM trips WHERE ended_at < ?', cutoff)).changes;
+    await the().runAsync('DELETE FROM walks WHERE ended_at < ?', cutoff);
+    await the().runAsync('DELETE FROM route_traces WHERE ended_at < ?', cutoff);
+    await the().runAsync('DELETE FROM visits WHERE t < ?', cutoff);
+    await the().runAsync('DELETE FROM hazards WHERE expires_at < ?', now);
+    await the().runAsync('DELETE FROM chat WHERE t < ?', cutoff);
+    await the().runAsync('DELETE FROM mem_tracks WHERE t < ?', cutoff);
+    await the().runAsync('DELETE FROM mem_events WHERE t < ?', cutoff);
+  });
+  return { history, trips };
 }
 
 // --- learned routes (simplified driver-trip polylines; never sent to peers) -----------------------------------------
@@ -350,6 +367,10 @@ export const chatDb: ChatPersistence = {
       'INSERT OR IGNORE INTO chat (id, thread, from_id, to_id, text, t, mine, status, read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       m.id, m.thread, m.from, m.to, m.text, m.t, m.mine ? 1 : 0, m.status, m.read ? 1 : 0,
     );
+  },
+  has: async (id: string) => {
+    const r = await the().getFirstAsync<{ n: number }>('SELECT 1 AS n FROM chat WHERE id = ? LIMIT 1', id);
+    return r !== null;
   },
   setStatus: async (id: string, status: ChatStatus) => {
     await the().runAsync('UPDATE chat SET status = ? WHERE id = ?', status, id);

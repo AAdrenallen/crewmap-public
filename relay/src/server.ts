@@ -12,7 +12,7 @@ import { SqliteStore } from './sqliteStore.ts';
  */
 const PORT = Number(process.env.PORT ?? 7447);
 const DB = process.env.DB ?? '';
-const KINDS = [21420, 1420];
+const KINDS = [21420, 1420, 1421, 5];
 const MAX_TTL_S = 31 * 86_400;
 
 const store: EventStore = DB ? new SqliteStore(DB) : new MemoryStore();

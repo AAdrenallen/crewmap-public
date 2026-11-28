@@ -6,14 +6,17 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaMetadata
+import android.media.browse.MediaBrowser
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 /** Players shown first in the picker (package-visibility `<queries>` in apps/mobile/plugins/withExternalNav.js). */
 internal val KNOWN_PLAYERS = listOf(
@@ -39,6 +42,7 @@ private val PLAYLIST_ACTION = Regex("playlist|radio|mix|station|next_list|skip_l
  */
 internal class MediaBridge(private val ctx: Context) {
   private val main = Handler(Looper.getMainLooper())
+  private val io = Executors.newSingleThreadExecutor()
   private val msm = ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
   private val listener = ComponentName(ctx, NavStatusListener::class.java)
   private var current: MediaController? = null
@@ -140,7 +144,7 @@ internal class MediaBridge(private val ctx: Context) {
     })
   }
 
-  /** One cover file in the app cache, overwritten per track, downscaled to 160 px. */
+  /** One cover file in the app cache, overwritten per track, downscaled to 160 px off the UI thread. */
   private fun art(pkg: String, title: String?, artist: String?, md: MediaMetadata?): String? {
     val key = "$pkg|$title|$artist"
     if (key == artKey) return artUri
@@ -148,13 +152,30 @@ internal class MediaBridge(private val ctx: Context) {
     val bmp = md?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: md?.getBitmap(MediaMetadata.METADATA_KEY_ART)
     artUri = md?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)?.takeIf { it.startsWith("http") || it.startsWith("file") }
     if (bmp != null) {
-      artUri = runCatching {
-        val scaled = Bitmap.createScaledBitmap(bmp, 160, (160f * bmp.height / bmp.width.coerceAtLeast(1)).toInt().coerceAtLeast(1), true)
-        val f = File(ctx.cacheDir, "nowplaying-${key.hashCode().toUInt()}.jpg")
-        ctx.cacheDir.listFiles { x -> x.name.startsWith("nowplaying-") && x != f }?.forEach { it.delete() }
-        FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-        "file://${f.absolutePath}"
-      }.getOrNull()
+      val copy = runCatching { bmp.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return artUri
+      io.execute {
+        val uri = runCatching {
+          val scaled = Bitmap.createScaledBitmap(copy, 160, (160f * copy.height / copy.width.coerceAtLeast(1)).toInt().coerceAtLeast(1), true)
+          try {
+            val f = File(ctx.cacheDir, "nowplaying-${key.hashCode().toUInt()}.jpg")
+            ctx.cacheDir.listFiles { x -> x.name.startsWith("nowplaying-") && x != f }?.forEach { it.delete() }
+            FileOutputStream(f).use { scaled.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            "file://${f.absolutePath}"
+          } finally {
+            if (scaled !== copy) scaled.recycle()
+          }
+        }.getOrNull()
+        copy.recycle()
+        if (uri != null) {
+          main.post {
+            if (artKey == key && artUri != uri) {
+              artUri = uri
+              lastKey = null
+              publish()
+            }
+          }
+        }
+      }
     }
     return artUri
   }
@@ -214,6 +235,153 @@ internal class MediaBridge(private val ctx: Context) {
   /** Preferred app, else the app of the most recent session, else the first installed player. */
   fun target(pkg: String?): String? = pkg ?: preferred() ?: current?.packageName ?: sessions().firstOrNull()?.packageName
     ?: installed().firstOrNull()?.get("pkg")
+
+  // --- In-app playlist / library / queue browsing -------------------------------------------------------------------
+
+  private fun controllerFor(pkg: String?): MediaController? {
+    val list = sessions()
+    if (pkg != null) list.firstOrNull { it.packageName == pkg }?.let { return it }
+    return current ?: list.firstOrNull()
+  }
+
+  /**
+   * Returns browsable playlists/folders (via Android MediaBrowserService when exposed by the player) plus the active
+   * session's Up Next queue items so CrewMap renders an integrated in-app player & playlist scroller.
+   */
+  fun browse(pkg: String?, parentId: String?, done: (List<Map<String, Any?>>) -> Unit) = main.post {
+    val p = target(pkg) ?: return@post done(emptyList())
+    val out = ArrayList<Map<String, Any?>>()
+    if (parentId == null) {
+      val ctrl = controllerFor(p)
+      ctrl?.queue?.take(30)?.forEach { q ->
+        val d = q.description
+        val title = d.title?.toString()?.trim()
+        if (!title.isNullOrEmpty()) {
+          out.add(
+            mapOf(
+              "id" to q.queueId.toString(),
+              "title" to title,
+              "subtitle" to d.subtitle?.toString(),
+              "art" to d.iconUri?.toString()?.takeIf { it.startsWith("http") || it.startsWith("content") || it.startsWith("file") },
+              "kind" to "queue",
+              "browsable" to false,
+            ),
+          )
+        }
+      }
+    }
+    @Suppress("DEPRECATION")
+    val svc = runCatching {
+      ctx.packageManager.queryIntentServices(Intent("android.media.browse.MediaBrowserService").setPackage(p), 0).firstOrNull()?.serviceInfo
+    }.getOrNull()
+    if (svc == null) return@post done(out)
+
+    var finished = false
+    var browser: MediaBrowser? = null
+    val finish = { items: List<Map<String, Any?>> ->
+      if (!finished) {
+        finished = true
+        runCatching { browser?.disconnect() }
+        done(items + out)
+      }
+    }
+    val timeout = Runnable { finish(emptyList()) }
+    main.postDelayed(timeout, 1800L)
+
+    val conn = object : MediaBrowser.ConnectionCallback() {
+      override fun onConnected() {
+        val b = browser ?: return finish(emptyList())
+        val targetParent = parentId ?: runCatching { b.root }.getOrNull()
+        if (targetParent.isNullOrEmpty()) return finish(emptyList())
+        b.subscribe(
+          targetParent,
+          object : MediaBrowser.SubscriptionCallback() {
+            override fun onChildrenLoaded(pid: String, children: MutableList<MediaBrowser.MediaItem>) {
+              main.removeCallbacks(timeout)
+              val mapped = children.take(40).mapNotNull { item ->
+                val d = item.description
+                val id = d.mediaId ?: return@mapNotNull null
+                val title = d.title?.toString()?.trim() ?: return@mapNotNull null
+                mapOf(
+                  "id" to id,
+                  "title" to title,
+                  "subtitle" to d.subtitle?.toString(),
+                  "art" to d.iconUri?.toString()?.takeIf { it.startsWith("http") || it.startsWith("content") || it.startsWith("file") },
+                  "kind" to if (item.isBrowsable) "folder" else "media",
+                  "browsable" to item.isBrowsable,
+                )
+              }
+              finish(mapped)
+            }
+
+            override fun onError(pid: String) {
+              main.removeCallbacks(timeout)
+              finish(emptyList())
+            }
+          },
+        )
+      }
+
+      override fun onConnectionFailed() {
+        main.removeCallbacks(timeout)
+        finish(emptyList())
+      }
+
+      override fun onConnectionSuspended() {
+        main.removeCallbacks(timeout)
+        finish(emptyList())
+      }
+    }
+    browser = runCatching { MediaBrowser(ctx, ComponentName(svc.packageName, svc.name), conn, null) }.getOrNull()
+    if (browser == null) {
+      main.removeCallbacks(timeout)
+      finish(emptyList())
+    } else {
+      runCatching { browser.connect() }.onFailure {
+        main.removeCallbacks(timeout)
+        finish(emptyList())
+      }
+    }
+  }
+
+  /** Plays a queue track, MediaBrowser playlist/track, search query, or opens the external player cleanly (never 50/50 split). */
+  fun playItem(activity: Activity?, pkg: String?, kind: String, id: String): Boolean {
+    val p = target(pkg) ?: return false
+    if (kind == "open") {
+      val launch = ctx.packageManager.getLaunchIntentForPackage(p)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: return false
+      return runCatching { (activity ?: ctx).startActivity(launch) }.isSuccess
+    }
+    val ctrl = controllerFor(p)
+    if (ctrl != null) {
+      val tc = ctrl.transportControls
+      when (kind) {
+        "queue" -> {
+          val qid = id.toLongOrNull() ?: return false
+          tc.skipToQueueItem(qid)
+          return true
+        }
+        "media" -> {
+          tc.playFromMediaId(id, null)
+          return true
+        }
+        "search" -> {
+          tc.playFromSearch(id, Bundle())
+          return true
+        }
+      }
+    }
+    // If the player session isn't started yet and the user tapped a playlist/mix, fire MEDIA_PLAY_FROM_SEARCH without leaving CrewMap if possible, else launch player.
+    if (kind == "search") {
+      val searchIntent = Intent("android.media.action.MEDIA_PLAY_FROM_SEARCH")
+        .setPackage(p)
+        .putExtra(android.app.SearchManager.QUERY, id)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      if (searchIntent.resolveActivity(ctx.packageManager) != null && runCatching { (activity ?: ctx).startActivity(searchIntent) }.isSuccess) {
+        return true
+      }
+    }
+    return false
+  }
 
   // --- Split screen -------------------------------------------------------------------------------------------------
 

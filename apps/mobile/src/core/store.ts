@@ -60,6 +60,8 @@ export interface IncomingEmote {
   quip?: { id: string; meta: QuipMeta; imageUri?: string };
 }
 
+export type MapTheme = 'adaptive' | 'light' | 'dark';
+
 export interface Settings {
   ghost: boolean;
   retentionDays: number;
@@ -91,6 +93,8 @@ export interface Settings {
   fuelGrade: FuelGrade;
   /** Fuel prices, chargers and traffic cameras on the map. */
   mapPois: boolean;
+  /** Map lighting: follow local sun (adaptive), always light, or always dark. */
+  mapTheme: MapTheme;
   /** Safety check-in (D66): minutes stopped somewhere remote before the phone asks. */
   checkInWaitMin: number;
 }
@@ -134,7 +138,14 @@ export interface AppState {
   driving: boolean;
   tripStartedAt: number | null;
   /** Last finished trip summary (for the calm trip-end card); never synced. */
-  lastTripEnd: { id: string; at: number; durationS: number; events: number; passenger: boolean } | null;
+  lastTripEnd: {
+    id: string;
+    at: number;
+    durationS: number;
+    events: number;
+    passenger: boolean;
+    roughSpot?: { lat: number; lng: number } | null;
+  } | null;
   liveEvents: RiskyEvent[];
   limitKph: number | null;
   nav: NavSession | null;
@@ -214,6 +225,7 @@ export const useApp = create<AppState>((set) => ({
     autoSwitchFaster: false,
     fuelGrade: 'regular',
     mapPois: true,
+    mapTheme: 'adaptive',
     checkInWaitMin: 5,
   },
   online: true,

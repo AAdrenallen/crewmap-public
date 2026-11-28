@@ -187,6 +187,7 @@ export const isAnonVote = (p: ParsedAnonReport | ParsedAnonVote): p is ParsedAno
 export class AnonHazardStore {
   private readonly reports = new Map<string, ParsedAnonReport>();
   private readonly votes = new Map<string, Map<string, boolean>>();
+  private readonly pendingVotes = new Map<string, Map<string, boolean>>();
   readonly own = new Set<string>();
 
   /** Returns true when the event was new and accepted. */
@@ -196,23 +197,55 @@ export class AnonHazardStore {
     if (!p) return false;
     this.prune(now);
     if (isAnonVote(p)) {
-      if (!this.reports.has(p.target)) return false;
+      // Relays replay newest-first, so votes can arrive before their target report: buffer briefly instead of dropping.
+      if (!this.reports.has(p.target)) {
+        let pv = this.pendingVotes.get(p.target);
+        if (!pv) {
+          if (this.pendingVotes.size >= 200) {
+            const oldest = this.pendingVotes.keys().next().value;
+            if (oldest !== undefined) this.pendingVotes.delete(oldest);
+          }
+          pv = new Map<string, boolean>();
+          this.pendingVotes.set(p.target, pv);
+        }
+        if (pv.has(p.pubkey) || pv.size >= ANON.maxVotesPerReport) return false;
+        pv.set(p.pubkey, p.up);
+        return true;
+      }
       const v = this.votes.get(p.target) ?? new Map<string, boolean>();
       if (v.has(p.pubkey) || v.size >= ANON.maxVotesPerReport) return false;
       v.set(p.pubkey, p.up);
       this.votes.set(p.target, v);
       return true;
     }
-    const recent = [...this.reports.values()].filter((r) => r.at >= p.at - ANON.windowMs && r.at <= p.at + ANON.windowMs);
     const fam = TYPE_FAMILY[p.type];
-    if (recent.filter((r) => r.cell === p.cell && TYPE_FAMILY[r.type] === fam).length >= ANON.perCellMax) return false;
-    if (recent.filter((r) => r.cell.slice(0, ANON.topicPrecision) === p.cell.slice(0, ANON.topicPrecision)).length >= ANON.perTopicMax) return false;
+    const topic = p.cell.slice(0, ANON.topicPrecision);
+    let cellCount = 0;
+    let topicCount = 0;
+    for (const r of this.reports.values()) {
+      if (r.at < p.at - ANON.windowMs || r.at > p.at + ANON.windowMs) continue;
+      if (r.cell === p.cell && TYPE_FAMILY[r.type] === fam) {
+        if (++cellCount >= ANON.perCellMax) return false;
+      }
+      if (r.cell.slice(0, ANON.topicPrecision) === topic) {
+        if (++topicCount >= ANON.perTopicMax) return false;
+      }
+    }
     this.reports.set(p.eventId, p);
+    const buffered = this.pendingVotes.get(p.eventId);
+    if (buffered) {
+      this.pendingVotes.delete(p.eventId);
+      this.votes.set(p.eventId, buffered);
+    }
     return true;
   }
 
   markOwn(eventId: string): void {
     this.own.add(`anon:${eventId}`);
+    if (this.own.size > 500) {
+      const oldest = this.own.values().next().value;
+      if (oldest !== undefined) this.own.delete(oldest);
+    }
   }
 
   get(eventId: string): ParsedAnonReport | undefined {
@@ -221,7 +254,7 @@ export class AnonHazardStore {
 
   prune(now: number): void {
     for (const [id, r] of this.reports) {
-      if (this.expiresAt(r) <= now) {
+      if (this.expiresAt(r, this.score(id)) <= now) {
         this.reports.delete(id);
         this.votes.delete(id);
       }
@@ -229,24 +262,30 @@ export class AnonHazardStore {
   }
 
   private score(id: string): { up: number; down: number } {
-    const v = [...(this.votes.get(id)?.values() ?? [])];
-    return { up: v.filter(Boolean).length, down: v.filter((x) => !x).length };
+    const v = this.votes.get(id);
+    if (!v) return { up: 0, down: 0 };
+    let up = 0;
+    let down = 0;
+    for (const ok of v.values()) {
+      if (ok) up++;
+      else down++;
+    }
+    return { up, down };
   }
 
   /** "Still there?" yes extends the report by half its TTL (at most twice its TTL in total), like crew reports. */
-  private expiresAt(r: ParsedAnonReport): number {
+  private expiresAt(r: ParsedAnonReport, sc: { up: number; down: number }): number {
     const ttl = r.expiresAt - r.at;
-    const { up, down } = this.score(r.eventId);
-    if (down >= up + 2) return 0;
-    return Math.min(r.at + 2 * ttl, r.expiresAt + (up * ttl) / 2);
+    if (sc.down >= sc.up + 2) return 0;
+    return Math.min(r.at + 2 * ttl, r.expiresAt + (sc.up * ttl) / 2);
   }
 
   hazards(now: number): Hazard[] {
     const out: Hazard[] = [];
     for (const r of this.reports.values()) {
-      const exp = this.expiresAt(r);
+      const sc = this.score(r.eventId);
+      const exp = this.expiresAt(r, sc);
       if (exp <= now) continue;
-      const { up, down } = this.score(r.eventId);
       out.push({
         id: `anon:${r.eventId}`,
         source: 'anon',
@@ -258,8 +297,8 @@ export class AnonHazardStore {
         street: null,
         reportedAt: r.at,
         expiresAt: exp,
-        reliability: Math.max(0, Math.min(10, ANON.baseReliability + up - 2 * down)),
-        confirmations: up,
+        reliability: Math.max(0, Math.min(10, ANON.baseReliability + sc.up - 2 * sc.down)),
+        confirmations: sc.up,
         uncertaintyM: r.uncertaintyM,
       });
     }

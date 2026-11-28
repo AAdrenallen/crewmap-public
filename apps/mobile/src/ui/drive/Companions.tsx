@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { useMapBearing } from '../map/mapBearing';
 import { ownerColor } from '../map/PlacesLayer';
 import { projector } from '../map/projector';
 import { elevation, font, type, useTheme } from '../theme';
+import { useActiveInterval } from '../useActiveInterval';
 
 const STRIP_W = 132;
 const ROW_H = 48;
@@ -101,6 +102,88 @@ export const CompanionOverlay = memo(function CompanionOverlay({ top }: { top: n
   const stripTop = lay.wide ? insets.top + 72 : top + 8;
   const stripX = stripLeft ? lay.gutterL : undefined;
 
+  const busyRef = useRef(false);
+  const run = useCallback(async () => {
+    if (!active || busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const now = Date.now();
+      const live = useCompanionLive.getState().live;
+      const session = useDriveAlong.getState().session;
+      const members = session?.members ?? {};
+      const fix = useApp.getState().fix;
+      const convoy = useCompanionLive.getState().convoy;
+      // Convoy: rows in line order (front first); members off the convoy route go last.
+      const orderOf = (id: string) => convoy?.rows.find((r) => r.id === id)?.order ?? null;
+      const ids = active
+        .split(',')
+        .sort((a, b) => (convoy ? (orderOf(a) ?? 99) - (orderOf(b) ?? 99) : 0))
+        .slice(0, MAX_ROWS);
+      // Group drive: each companion's ETA (their own nav ETA, else a straight-line guess) or "arrived".
+      const gl = session?.dest
+        ? groupRows(session, engine.me.deviceId, null, Object.fromEntries(Object.entries(live).map(([k, c]) => [k, { lat: c.lat, lng: c.lng, eta: c.eta }])), now)
+        : [];
+      const nextRows: Row[] = ids.map((id) => {
+        const c = live[id];
+        const g = gl.find((x) => x.id === id);
+        const arrived = g?.status === 'arrived';
+        const order = convoy ? orderOf(id) : null;
+        const label = arrived
+          ? t('gd.arrived')
+          : convoy && convoy.rel[id]
+            ? convoyLabel(convoy.rel[id])
+            : g
+              ? g.etaAt
+                ? formatClock(g.etaAt)
+                : ''
+              : c?.rel
+                ? labelText(relationLabel(c.rel))
+                : '';
+        return {
+          id,
+          name: members[id]?.name ?? '',
+          label,
+          offRoute: convoy ? !arrived && order === null && !!c : !g && c?.rel?.onMyRoute === false,
+          stale: !arrived && (!c || now - c.receivedAt > DRIVE_ALONG.staleMs),
+          order,
+          leader: convoy?.leader === id,
+        };
+      });
+      const reserved = stripLeft
+        ? { top: top + 4, bottom: insets.bottom + 110, left: lay.gutterL + STRIP_W + 4, right: lay.gutterR }
+        : { top: insets.top + 8, bottom: insets.bottom + 110, left: lay.panelW + lay.gutterL, right: lay.gutterR + STRIP_W + 4 };
+      const safe = safeRect(lay.width, lay.height, reserved);
+      const p = projector();
+      const camBearing = useMapBearing.getState().bearing;
+      const projIds = fix ? ids.filter((id) => !!live[id]) : [];
+      const pts = await Promise.all(
+        projIds.map((id) => {
+          const c = live[id]!;
+          return p ? p.pointInView(c.lng, c.lat).catch(() => null) : Promise.resolve(null);
+        }),
+      );
+      const raw: Blip[] = [];
+      for (let i = 0; i < projIds.length; i++) {
+        const id = projIds[i]!;
+        const c = live[id]!;
+        const pt = pts[i] ?? null;
+        const rel = normalizeDeg(bearingDeg(fix!, c) - camBearing);
+        const e = edgePlacement(pt ? { x: pt[0], y: pt[1] } : null, rel, safe);
+        if (e.onScreen) continue;
+        raw.push({ id, initial: (members[id]?.name ?? '?').slice(0, 1).toUpperCase(), x: e.x, y: e.y, edge: e.edge, angleDeg: e.angleDeg, dist: formatDistance(c.rel?.distM ?? 0, lang()) });
+      }
+      const nextBlips = spreadBlips(raw).map((b) => ({ ...b, x: Math.round(b.x), y: Math.round(b.y), angleDeg: Math.round(b.angleDeg / 5) * 5 }));
+      const s = JSON.stringify([nextRows, nextBlips]);
+      if (s !== sig.current) {
+        sig.current = s;
+        setRows(nextRows);
+        setBlips(nextBlips);
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }, [active, top, stripLeft, lay.width, lay.height, lay.gutterL, lay.gutterR, lay.panelW, insets.top, insets.bottom]);
+
   useEffect(() => {
     if (!active) {
       setRows([]);
@@ -108,84 +191,10 @@ export const CompanionOverlay = memo(function CompanionOverlay({ top }: { top: n
       sig.current = '';
       return;
     }
-    let busy = false;
-    const run = async () => {
-      if (busy) return;
-      busy = true;
-      try {
-        const now = Date.now();
-        const live = useCompanionLive.getState().live;
-        const session = useDriveAlong.getState().session;
-        const members = session?.members ?? {};
-        const fix = useApp.getState().fix;
-        const convoy = useCompanionLive.getState().convoy;
-        // Convoy: rows in line order (front first); members off the convoy route go last.
-        const orderOf = (id: string) => convoy?.rows.find((r) => r.id === id)?.order ?? null;
-        const ids = active
-          .split(',')
-          .sort((a, b) => (convoy ? (orderOf(a) ?? 99) - (orderOf(b) ?? 99) : 0))
-          .slice(0, MAX_ROWS);
-        // Group drive: each companion's ETA (their own nav ETA, else a straight-line guess) or "arrived".
-        const gl = session?.dest
-          ? groupRows(session, engine.me.deviceId, null, Object.fromEntries(Object.entries(live).map(([k, c]) => [k, { lat: c.lat, lng: c.lng, eta: c.eta }])), now)
-          : [];
-        const nextRows: Row[] = ids.map((id) => {
-          const c = live[id];
-          const g = gl.find((x) => x.id === id);
-          const arrived = g?.status === 'arrived';
-          const order = convoy ? orderOf(id) : null;
-          const label = arrived
-            ? t('gd.arrived')
-            : convoy && convoy.rel[id]
-              ? convoyLabel(convoy.rel[id])
-              : g
-                ? g.etaAt
-                  ? formatClock(g.etaAt)
-                  : ''
-                : c?.rel
-                  ? labelText(relationLabel(c.rel))
-                  : '';
-          return {
-            id,
-            name: members[id]?.name ?? '',
-            label,
-            offRoute: convoy ? !arrived && order === null && !!c : !g && c?.rel?.onMyRoute === false,
-            stale: !arrived && (!c || now - c.receivedAt > DRIVE_ALONG.staleMs),
-            order,
-            leader: convoy?.leader === id,
-          };
-        });
-        const reserved = stripLeft
-          ? { top: top + 4, bottom: insets.bottom + 110, left: lay.gutterL + STRIP_W + 4, right: lay.gutterR }
-          : { top: insets.top + 8, bottom: insets.bottom + 110, left: lay.panelW + lay.gutterL, right: lay.gutterR + STRIP_W + 4 };
-        const safe = safeRect(lay.width, lay.height, reserved);
-        const p = projector();
-        const camBearing = useMapBearing.getState().bearing;
-        const raw: Blip[] = [];
-        for (const id of ids) {
-          const c = live[id];
-          if (!c || !fix) continue;
-          const pt = p ? await p.pointInView(c.lng, c.lat).catch(() => null) : null;
-          const rel = normalizeDeg(bearingDeg(fix, c) - camBearing);
-          const e = edgePlacement(pt ? { x: pt[0], y: pt[1] } : null, rel, safe);
-          if (e.onScreen) continue;
-          raw.push({ id, initial: (members[id]?.name ?? '?').slice(0, 1).toUpperCase(), x: e.x, y: e.y, edge: e.edge, angleDeg: e.angleDeg, dist: formatDistance(c.rel?.distM ?? 0, lang()) });
-        }
-        const nextBlips = spreadBlips(raw).map((b) => ({ ...b, x: Math.round(b.x), y: Math.round(b.y), angleDeg: Math.round(b.angleDeg / 5) * 5 }));
-        const s = JSON.stringify([nextRows, nextBlips]);
-        if (s !== sig.current) {
-          sig.current = s;
-          setRows(nextRows);
-          setBlips(nextBlips);
-        }
-      } finally {
-        busy = false;
-      }
-    };
     void run();
-    const timer = setInterval(() => void run(), DRIVE_ALONG.blipEveryMs);
-    return () => clearInterval(timer);
-  }, [active, top, stripLeft, lay.width, lay.height, lay.gutterL, lay.gutterR, lay.panelW, insets.top, insets.bottom]);
+  }, [active, run]);
+
+  useActiveInterval(() => void run(), DRIVE_ALONG.blipEveryMs, !!active);
 
   const show = (id: string) => {
     const c = useCompanionLive.getState().live[id];

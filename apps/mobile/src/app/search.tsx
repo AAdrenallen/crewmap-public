@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,8 +42,18 @@ interface Hit {
 /** Search: "Your places" (mine + friends' shared, name/word/substring/type match) and friends first (local, free), then Mapbox Search Box (debounced 350 ms, ≥ 3 chars). */
 export default function Search() {
   const router = useRouter();
-  /** Crewmates preselected for a group drive, carried to the route preview. */
-  const { with: withIds, answer } = useLocalSearchParams<{ with?: string; answer?: string }>();
+  /** Crewmates preselected for a group drive, or picking a custom starting point for /route. */
+  const { with: withIds, answer, pickOrigin, destName, destLat, destLng, fromName, fromLat, fromLng } = useLocalSearchParams<{
+    with?: string;
+    answer?: string;
+    pickOrigin?: string;
+    destName?: string;
+    destLat?: string;
+    destLng?: string;
+    fromName?: string;
+    fromLat?: string;
+    fromLng?: string;
+  }>();
   /** Answering "where do you want me?" (D47): a pick sends the place instead of opening a route. */
   const [note, setNote] = useState('');
   const [answerErr, setAnswerErr] = useState(false);
@@ -126,7 +136,31 @@ export default function Search() {
       void reply(name, lat, lng);
       return;
     }
-    router.replace({ pathname: '/route', params: { name, lat: String(lat), lng: String(lng), ...(withIds ? { with: withIds } : {}) } });
+    if (pickOrigin === '1' && destLat && destLng) {
+      router.replace({
+        pathname: '/route',
+        params: {
+          name: destName ?? '',
+          lat: destLat,
+          lng: destLng,
+          fromName: name,
+          fromLat: String(lat),
+          fromLng: String(lng),
+          ...(withIds ? { with: withIds } : {}),
+        },
+      });
+      return;
+    }
+    router.replace({
+      pathname: '/route',
+      params: {
+        name,
+        lat: String(lat),
+        lng: String(lng),
+        ...(fromLat && fromLng ? { fromName: fromName ?? '', fromLat, fromLng } : {}),
+        ...(withIds ? { with: withIds } : {}),
+      },
+    });
   };
 
   const hits: Hit[] = useMemo(() => {
@@ -171,13 +205,14 @@ export default function Search() {
   const star = async (p: SavedPlace) => setSaved(await toggleFav(p));
   const drop = async (p: SavedPlace) => setRecent(await removeRecent(p));
   const wipe = async () => setRecent(await clearRecent());
+  const renderSep = useCallback(() => <View style={[styles.sep, { backgroundColor: th.separator }]} />, [th.separator]);
 
   return (
     <View style={{ flex: 1, backgroundColor: th.bg, paddingTop: insets.top + 8 }}>
       <View style={styles.bar}>
         <IconButton testID="search-back" icon="back" tone="plain" label={t('common.back')} onPress={close} />
         <View style={{ flex: 1 }}>
-          <Field testID="search-input" label={t('map.search')} hideLabel placeholder={t('map.search')} icon="search" value={q} onChangeText={setQ} onClear={() => setQ('')} autoFocus returnKeyType="search" />
+          <Field testID="search-input" label={pickOrigin === '1' ? t('route.pickStart') : t('map.search')} hideLabel placeholder={pickOrigin === '1' ? t('route.pickStart') : t('map.search')} icon="search" value={q} onChangeText={setQ} onClear={() => setQ('')} autoFocus returnKeyType="search" />
         </View>
       </View>
       {!!answer && (
@@ -196,7 +231,7 @@ export default function Search() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}
-        ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: th.separator }]} />}
+        ItemSeparatorComponent={renderSep}
         ListHeaderComponent={isFuelQuery(q) ? <FuelResults onPick={(name, lat, lng) => go(name, lat, lng)} /> : undefined}
         ListEmptyComponent={empty}
         ListFooterComponent={footer()}

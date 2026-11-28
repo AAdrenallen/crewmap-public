@@ -9,7 +9,9 @@ import { Stack, router as rootRouter, useRouter, useSegments } from 'expo-router
 import { t } from '@crewmap/shared/i18n';
 import type { EmotePreset } from '@crewmap/shared/emotes';
 import * as SplashScreen from 'expo-splash-screen';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { StatusBar } from 'expo-status-bar';
+import { platform } from '@crewmap/platform';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold, useFonts } from '@expo-google-fonts/inter';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -99,6 +101,22 @@ export default function RootLayout() {
   const [engineFailed, setEngineFailed] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const lang = useApp((s) => s.settings.lang);
+  const navActive = useApp((s) => s.nav?.active === true);
+
+  // Keep the display awake for the entire duration of active turn-by-turn navigation (both JS expo-keep-awake & native window flag).
+  useEffect(() => {
+    if (navActive) {
+      void activateKeepAwakeAsync('crewmap-nav').catch(() => undefined);
+      platform.screen.setKeepAwake(true);
+      return () => {
+        void deactivateKeepAwake('crewmap-nav');
+        platform.screen.setKeepAwake(false);
+      };
+    }
+    void deactivateKeepAwake('crewmap-nav');
+    platform.screen.setKeepAwake(false);
+    return undefined;
+  }, [navActive]);
 
   useEffect(() => {
     if (!ready) return;
@@ -174,7 +192,7 @@ export default function RootLayout() {
           <Stack.Screen name="friend/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 0.95], sheetGrabberVisible: true }} />
           <Stack.Screen name="emote/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.7, 1], sheetGrabberVisible: true }} />
           <Stack.Screen name="hazard/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.35], sheetGrabberVisible: true }} />
-          <Stack.Screen name="poi/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.45], sheetGrabberVisible: true }} />
+          <Stack.Screen name="poi/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 0.92], sheetGrabberVisible: true }} />
           <Stack.Screen name="place/[id]" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.42], sheetGrabberVisible: true }} />
           <Stack.Screen name="parked" options={{ presentation: 'formSheet', sheetAllowedDetents: [0.5, 0.8], sheetGrabberVisible: true }} />
           <Stack.Screen name="search" options={{ animation: 'fade_from_bottom' }} />

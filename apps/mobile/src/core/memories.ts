@@ -258,21 +258,35 @@ export class Memories {
     return s.tripStartedAt !== null || !!useDriveAlong.getState().session || Date.now() - this.lastTripEnd < MEMORY.chainGapMs;
   }
 
+  private lastSessionSave = 0;
+
   private noteSession(s: ReturnType<typeof useDriveAlong.getState>['session']): void {
     if (!s) return;
     const me = this.me();
+    const now = Date.now();
+    let added = false;
     for (const [id, m] of Object.entries(s.members)) {
       if (id === me || m.state !== 'joined') continue;
       const k = `${s.sid}:${id}`;
       const cur = this.sessionSeen.get(k);
-      this.sessionSeen.set(k, { from: cur?.from ?? m.at, to: Date.now() });
+      if (!cur) added = true;
+      this.sessionSeen.set(k, { from: cur?.from ?? m.at, to: now });
     }
     if (s.owner !== me) {
       const k = `${s.sid}:${s.owner}`;
       const cur = this.sessionSeen.get(k);
-      this.sessionSeen.set(k, { from: cur?.from ?? s.startedAt, to: Date.now() });
+      if (!cur) added = true;
+      this.sessionSeen.set(k, { from: cur?.from ?? s.startedAt, to: now });
     }
-    void db.kvSet('memories.sessions', [...this.sessionSeen]);
+    while (this.sessionSeen.size > 200) {
+      const oldest = this.sessionSeen.keys().next().value;
+      if (oldest === undefined) break;
+      this.sessionSeen.delete(oldest);
+    }
+    if (added || now - this.lastSessionSave >= 30_000) {
+      this.lastSessionSave = now;
+      void db.kvSet('memories.sessions', [...this.sessionSeen]);
+    }
   }
 
   /** Emotes I send (Emotes.send) during the recording window. */

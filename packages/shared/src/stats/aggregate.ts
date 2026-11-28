@@ -25,6 +25,8 @@ export interface StatsAgg {
   homeReturns?: number;
   /** Most recent consecutive drives without a hard brake (all-time, like the clean streak). */
   noBrakeStreak?: number;
+  /** Highest speed recorded in the period (km/h), gated by the opt-in `topSpeed` visibility toggle. */
+  topKph?: number;
 }
 
 export type AggSet = Partial<Record<Period, StatsAgg>>;
@@ -114,11 +116,12 @@ export function aggregateFor(
     homeLeaves: home.leaves,
     homeReturns: home.returns,
     noBrakeStreak: noBrake,
+    topKph: drives.reduce((m, t) => Math.max(m, t.topSpeedKph), 0),
   };
 }
 
 /** Fields each stats visibility switch allows (home counts are place-derived, so they follow `places`). */
-export type AggGroup = 'score' | 'distance' | 'events' | 'trips' | 'places' | 'home';
+export type AggGroup = 'score' | 'distance' | 'events' | 'trips' | 'places' | 'home' | 'topSpeed';
 
 /** Stat group of each aggregate field (`longestKm` needs both distance and trips). */
 export const AGG_GROUPS: Record<AggGroup, (keyof StatsAgg)[]> = {
@@ -128,6 +131,7 @@ export const AGG_GROUPS: Record<AggGroup, (keyof StatsAgg)[]> = {
   trips: ['drives', 'walks', 'nightTrips', 'earlyTrips', 'longestKm'],
   places: ['places'],
   home: ['homeLeaves', 'homeReturns'],
+  topSpeed: ['topKph'],
 };
 
 /** What one recipient may see: drop every field of a group `allowed` refuses (call before sealing). */
@@ -160,9 +164,10 @@ export type CategoryId =
   | 'nightOwl'
   | 'earlyBird'
   | 'places'
-  | 'noBrake';
+  | 'noBrake'
+  | 'topSpeed';
 
-export type CategoryUnit = 'km' | 'count' | 'score' | 'per100';
+export type CategoryUnit = 'km' | 'count' | 'score' | 'per100' | 'kph';
 
 export interface Category {
   id: CategoryId;
@@ -178,7 +183,7 @@ const pos = (x: number | null | undefined) => {
   return v !== null && v > 0 ? v : null;
 };
 
-/** Top speed is deliberately absent (no incentive to speed). Zero counts don't rank. */
+/** Zero counts don't rank. `topSpeed` only ranks members who opted into sharing top speed. */
 export const CATEGORIES: Category[] = [
   { id: 'driven', unit: 'km', dir: 'high', value: (a) => pos(a.drivenKm) },
   { id: 'walked', unit: 'km', dir: 'high', value: (a) => pos(a.walkedKm) },
@@ -187,6 +192,7 @@ export const CATEGORIES: Category[] = [
   { id: 'score', unit: 'score', dir: 'high', value: (a) => ((a.scoredKm ?? 0) >= LEADER.minKmForQuality ? num(a.score) : null) },
   { id: 'smooth', unit: 'per100', dir: 'low', value: (a) => ((a.drivenKm ?? 0) >= LEADER.minKmForQuality ? num(a.eventsPer100) : null) },
   { id: 'noBrake', unit: 'count', dir: 'high', value: (a) => pos(a.noBrakeStreak) },
+  { id: 'topSpeed', unit: 'kph', dir: 'high', value: (a) => pos(a.topKph) },
   { id: 'homeRuns', unit: 'count', dir: 'high', value: (a) => pos((a.homeLeaves ?? 0) + (a.homeReturns ?? 0)) },
   { id: 'nightOwl', unit: 'count', dir: 'high', value: (a) => pos(a.nightTrips) },
   { id: 'earlyBird', unit: 'count', dir: 'high', value: (a) => pos(a.earlyTrips) },

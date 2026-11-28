@@ -6,6 +6,7 @@ export interface CrewmapPlatformNative {
   stopActivityUpdates(): Promise<boolean>;
   getLastActivity(): { activity: string; confidence: number; t: number } | null;
   getScreenState(): { interactive: boolean; locked: boolean };
+  setKeepScreenOn?(on: boolean): void;
   isIgnoringBatteryOptimizations(): boolean;
   requestIgnoreBatteryOptimizations(): boolean;
   openAppBatterySettings(): boolean;
@@ -30,6 +31,7 @@ export interface CrewmapPlatformNative {
   ttsInstallVoice(): boolean;
   ttsVoiceName(lang: string): Promise<string | null>;
   ttsVoices(): Promise<{ name: string; locale: string; quality: number; network: boolean }[]>;
+  soundPlay?(uri: string, volume: number, rate: number, duckUnderVoice: boolean): Promise<boolean>;
   mediaHasAccess(): boolean;
   mediaInstalled(): { pkg: string; label: string }[];
   mediaPreferred(): string | null;
@@ -38,6 +40,8 @@ export interface CrewmapPlatformNative {
   mediaStop(): void;
   mediaCurrent(): NativeNowPlaying | null;
   mediaControl(action: string): boolean;
+  mediaBrowse?(pkg: string | null, parentId: string | null): Promise<NativeMediaBrowseItem[]>;
+  mediaPlayItem?(pkg: string | null, kind: string, id: string): boolean;
   mediaOpenSplit(pkg: string | null): Promise<string>;
   photoCompress(uri: string, maxEdge: number, maxBytes: number): Promise<{ uri: string; width: number; height: number; bytes: number } | null>;
   photoShare(uri: string, mime: string, title: string): Promise<boolean>;
@@ -63,6 +67,15 @@ export interface NativeNowPlaying {
   canPrev: boolean;
   canNext: boolean;
   canNextPlaylist: boolean;
+}
+
+export interface NativeMediaBrowseItem {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  art: string | null;
+  kind: string;
+  browsable: boolean;
 }
 
 export const native = requireNativeModule<CrewmapPlatformNative>('CrewmapPlatform');

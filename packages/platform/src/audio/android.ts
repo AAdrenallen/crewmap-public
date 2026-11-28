@@ -12,6 +12,7 @@ import { File } from 'expo-file-system';
 import type { AudioService, PermissionState, SpeechLang } from '../contracts';
 
 let speaking = 0;
+let clipModeReady = false;
 let recorder: AudioRecorder | null = null;
 let recordTimer: ReturnType<typeof setTimeout> | null = null;
 let recordResolve: ((v: { uri: string; durationMs: number; bytes: number }) => void) | null = null;
@@ -21,6 +22,7 @@ let stopWanted = false;
 
 /** Navigation voice ducks other apps (music/podcasts); emote clips mix in quietly underneath. */
 async function voiceMode(): Promise<void> {
+  clipModeReady = false;
   await setAudioModeAsync({ interruptionMode: 'duckOthers', shouldPlayInBackground: true, playsInSilentMode: true });
 }
 
@@ -61,24 +63,36 @@ export const androidAudio: AudioService = {
   voiceName: (lang) => native.ttsVoiceName(lang),
   voices: () => native.ttsVoices(),
   playClip: async (uri, opts) => {
-    await setAudioModeAsync({ interruptionMode: opts.duckUnderVoice ? 'mixWithOthers' : 'duckOthers', playsInSilentMode: true, shouldPlayInBackground: true });
+    const vol = Math.min(1, Math.max(0.05, opts.volume ?? (opts.duckUnderVoice ? 0.35 : 1)));
+    const rate = opts.rate ? Math.min(2, Math.max(0.5, opts.rate)) : 1;
+    // Prefer native SoundPool (24-voice polyphonic PCM mixer: overlapping emotes stack additively and never cut each other out).
+    if (typeof native.soundPlay === 'function') {
+      try {
+        if (await native.soundPlay(uri, vol, rate, opts.duckUnderVoice)) return;
+      } catch {
+        // Fall through to expo-audio player (e.g. remote URI or pre-rebuild binary).
+      }
+    }
+    // Configure mixWithOthers once so starting overlapping clips never triggers audio-focus re-negotiation that pauses active clips.
+    if (!clipModeReady && speaking === 0 && !recorder && !recordStarting) {
+      clipModeReady = true;
+      await setAudioModeAsync({ interruptionMode: 'mixWithOthers', playsInSilentMode: true, shouldPlayInBackground: true }).catch(() => {
+        clipModeReady = false;
+      });
+    }
     const player = createAudioPlayer(uri);
-    player.volume = opts.volume ?? (opts.duckUnderVoice ? 0.35 : 1);
-    if (opts.rate && opts.rate !== 1) {
+    player.volume = vol;
+    if (rate !== 1) {
       player.shouldCorrectPitch = false;
-      player.setPlaybackRate(Math.min(2, Math.max(0.5, opts.rate)));
+      player.setPlaybackRate(rate);
     }
     await new Promise<void>((resolve) => {
-      const sub = player.addListener('playbackStatusUpdate', (s) => {
-        if (s.didJustFinish) {
-          sub.remove();
-          player.remove();
-          resolve();
-        }
-      });
-      player.play();
-      // Safety net: clips are ≤ 5 s.
-      setTimeout(() => {
+      let done = false;
+      let safety: ReturnType<typeof setTimeout> | null = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (safety) clearTimeout(safety);
         sub.remove();
         try {
           player.remove();
@@ -86,11 +100,18 @@ export const androidAudio: AudioService = {
           // already released
         }
         resolve();
-      }, 6500);
+      };
+      const sub = player.addListener('playbackStatusUpdate', (s) => {
+        if (s.didJustFinish) finish();
+      });
+      player.play();
+      // Safety net: clips are ≤ 5 s.
+      safety = setTimeout(finish, 6500);
     });
   },
   record: async (maxMs, onStart) => {
     if (recorder) await finishRecording();
+    clipModeReady = false;
     recordStarting = true;
     stopWanted = false;
     try {

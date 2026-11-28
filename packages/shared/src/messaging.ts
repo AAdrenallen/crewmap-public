@@ -27,10 +27,10 @@ export function inAppBlipPolicy(i: BlipInput): BlipAction {
   if (i.kind === 'emote' && i.overlayShown) return 'silent';
   if (i.ctx === 'browse') return 'bubble';
   if (i.ctx === 'driveStopped') return 'tiny';
-  return i.kind === 'chat1' ? 'tiny' : 'silent';
+  return i.kind === 'chat1' || i.kind === 'chatCrew' ? 'tiny' : 'silent';
 }
 
-export const BLIP = { max: 3, ttlMs: 5000 } as const;
+export const BLIP = { max: 3, ttlMs: 5000, uiTtlMs: 14_000, previewMs: 4200 } as const;
 
 export interface Blip {
   /** Conversation key (thread); one bubble per conversation. */
@@ -41,13 +41,25 @@ export interface Blip {
   tiny: boolean;
   count: number;
   at: number;
+  /** Short snippet of the most recent message, shown in the smooth emerging preview pill. */
+  preview?: string;
+}
+
+/** Trims a message down to a few words for the bubble's smooth pop-out preview pill. */
+export function blipPreview(text: string, maxWords = 6, maxChars = 38): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const joined = words.slice(0, maxWords).join(' ');
+  const clipped = joined.length > maxChars ? joined.slice(0, maxChars).trimEnd() : joined;
+  return words.length > maxWords || joined.length > maxChars ? `${clipped}…` : clipped;
 }
 
 /** Adds a message to the bubble stack: same conversation moves to the front with its count bumped. Newest first. */
 export function pushBlip(list: readonly Blip[], b: Omit<Blip, 'count'>): Blip[] {
   const prev = list.find((x) => x.id === b.id);
   const rest = list.filter((x) => x.id !== b.id);
-  return [{ ...b, tiny: prev ? prev.tiny && b.tiny : b.tiny, count: (prev?.count ?? 0) + 1 }, ...rest];
+  const preview = b.preview !== undefined ? b.preview : prev?.preview;
+  return [{ ...b, ...(preview !== undefined ? { preview } : {}), tiny: prev ? prev.tiny && b.tiny : b.tiny, count: (prev?.count ?? 0) + 1 }, ...rest];
 }
 
 /** Drops bubbles older than the TTL. */

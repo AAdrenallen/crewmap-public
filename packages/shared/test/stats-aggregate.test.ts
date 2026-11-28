@@ -127,7 +127,9 @@ describe('rankCategory', () => {
     expect(r.top.map((x) => x.id)).toEqual(['c', 'b']);
     expect(r.me).toBeNull();
   });
-  it('has no top-speed category', () => {
-    expect(CATEGORIES.map((c) => c.id)).not.toContain('topSpeed');
+  it('includes top-speed category and ranks by topKph', () => {
+    expect(CATEGORIES.map((c) => c.id)).toContain('topSpeed');
+    const r = rankCategory([e('a', { topKph: 118 }), e('b', { topKph: 132 }), e('me', { topKph: 105 })], cat('topSpeed'), 'me');
+    expect(r.top.map((x) => x.id)).toEqual(['b', 'a', 'me']);
   });
 });

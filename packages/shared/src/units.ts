@@ -22,8 +22,17 @@ export function formatMinutes(s: number): string {
   return r === 0 ? `${h} h` : `${h} h ${String(r).padStart(2, '0')}`;
 }
 
+const clockFormatters = new Map<string, Intl.DateTimeFormat>();
+
 export function formatClock(t: number, tz?: string): string {
-  return new Intl.DateTimeFormat('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false, ...(tz ? { timeZone: tz } : {}) }).format(t);
+  const key = tz ?? '';
+  let fmt = clockFormatters.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false, ...(tz ? { timeZone: tz } : {}) });
+    if (clockFormatters.size > 16) clockFormatters.clear();
+    clockFormatters.set(key, fmt);
+  }
+  return fmt.format(t);
 }
 
 export function kph(mps: number | null): number | null {

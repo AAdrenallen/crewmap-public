@@ -74,7 +74,7 @@ export class WazePaidSource implements HazardSource {
       bottom_left: `${b.south.toFixed(5)},${b.west.toFixed(5)}`,
       top_right: `${b.north.toFixed(5)},${b.east.toFixed(5)}`,
       max_alerts: '200',
-      max_jams: '0',
+      max_jams: '50',
     });
     return `${PAID_URL}?${p.toString()}`;
   }
@@ -89,13 +89,13 @@ export class WazePaidSource implements HazardSource {
       return c?.hazards ?? [];
     }
     this.tracker.attempt(ctx.now);
-    this.ledger.add(ctx.now, PAID_COST_USD_PER_REQUEST);
     try {
       const res = await this.http(this.url(ctx.bbox), { 'X-API-Key': this.apiKey, Accept: 'application/json' });
       if (res.status !== 200) {
         this.tracker.fail(ctx.now, res.status === 401 || res.status === 403 ? 'blocked' : 'degraded', `HTTP ${res.status}`, res.status);
         return c?.hazards ?? [];
       }
+      this.ledger.add(ctx.now, PAID_COST_USD_PER_REQUEST);
       const body = PaidResponse.safeParse(await res.json());
       if (!body.success) {
         this.tracker.fail(ctx.now, 'shapeChanged', body.error.issues[0]?.message ?? 'invalid');

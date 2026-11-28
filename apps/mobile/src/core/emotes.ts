@@ -301,7 +301,7 @@ export class Emotes {
     const clipUri = q.meta.a ? await blobUri(q.meta.a, true) : null;
     const imageUri = q.meta.i ? await blobUri(q.meta.i, false) : null;
     const shown = emotePopup(fc.ctx, fc.next, s.settings.drivingEmotePopups);
-    if (!shown && (!driving || s.settings.drivingEmotePopups)) blipFor({ thread: q.from, from: q.from, name, kind: 'quip', viewing: false, muted: isMuted(q.from), overlayShown: false });
+    if (!shown && (!driving || s.settings.drivingEmotePopups)) blipFor({ thread: q.from, from: q.from, name, kind: 'quip', viewing: false, muted: isMuted(q.from), overlayShown: false, preview: label });
     if (shown) {
       useApp.getState().set({
         emotes: [
@@ -511,10 +511,16 @@ export class Emotes {
     }
     platform.haptics.play('bounce');
     if (pop.sound) {
-      // Each repeat: the preset's sting, a little louder and higher (capped); the voice again every 4th.
+      // Layer BOTH the announcer voice and escalating sting so overlapping emotes genuinely chorus & grow louder together!
       const rate = Math.min(EDGE_AUDIO.maxRate, 1 + (st.count - 1) * EDGE_AUDIO.rateStep);
-      const uri = st.count % 4 === 0 ? await this.voice(msg.preset) : await assetUri(STINGS[stingOf(msg.preset)]);
-      if (uri) void platform.audio.playClip(uri, { duckUnderVoice: false, volume: pop.volume, rate });
+      const voiceRate = Math.min(1.22, 1 + (st.count - 1) * 0.025);
+      const [voiceUri, stingUri] = await Promise.all([this.voice(msg.preset), assetUri(STINGS[stingOf(msg.preset)])]);
+      if (stingUri) void platform.audio.playClip(stingUri, { duckUnderVoice: false, volume: pop.volume, rate });
+      if (voiceUri) {
+        // Slight 35 ms chorus offset so simultaneous burst packets enrich & sum cleanly without comb-filtering.
+        const chorusMs = ((st.count - 1) % 4) * 35;
+        setTimeout(() => void platform.audio.playClip(voiceUri, { duckUnderVoice: false, volume: Math.min(1, 0.8 + st.count * 0.05), rate: voiceRate }), chorusMs);
+      }
     }
     return true;
   }
@@ -549,7 +555,8 @@ export class Emotes {
           ],
         });
     } else if (AppState.currentState === 'active' && (!driving || s.settings.drivingEmotePopups)) {
-      blipFor({ thread: from, from, name, kind: 'emote', viewing: false, muted: isMuted(from), overlayShown: false });
+      const emLabel = msg.preset === 'custom' ? (msg.label ?? t('emote.custom')) : t(`emote.${msg.preset}`);
+      blipFor({ thread: from, from, name, kind: 'emote', viewing: false, muted: isMuted(from), overlayShown: false, preview: emLabel });
     }
     if (playSound) {
       // While driving: the announcer line only, ducked under navigation voice, never interrupting it.

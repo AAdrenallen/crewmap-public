@@ -244,11 +244,11 @@ describe('surroundings lookup and tunables', () => {
     expect(parseSurroundings({ remark: 'runtime error' })).toBeNull();
   });
   it('wait clamps to the offered choices; crash uses its own wait', () => {
-    expect(CHECK_IN.waitChoicesMin).toEqual([5, 10, 15]);
+    expect(CHECK_IN.waitChoicesMin).toEqual([5, 10, 15, 30, 60]);
     expect(CHECK_IN.waitChoicesMin[0]).toBe(CHECK_IN.defaultWaitMin);
     expect(checkInWaitS(10, false)).toBe(600);
     expect(checkInWaitS(1, false)).toBe(300);
-    expect(checkInWaitS(60, false)).toBe(900);
+    expect(checkInWaitS(120, false)).toBe(3600);
     expect(checkInWaitS(Number.NaN, false)).toBe(300);
     expect(checkInWaitS(15, true)).toBe(CHECK_IN.crash.waitS);
     expect(CHECK_IN.graceS).toBeGreaterThanOrEqual(120);

@@ -12,4 +12,11 @@ export const androidScreen: ScreenService = {
     const sub = native.addListener('onScreen', cb);
     return () => sub.remove();
   },
+  setKeepAwake: (on) => {
+    try {
+      native.setKeepScreenOn?.(on);
+    } catch {
+      // Optional on pre-rebuild native binaries; expo-keep-awake also holds the window flag.
+    }
+  },
 };

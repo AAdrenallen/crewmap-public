@@ -165,13 +165,21 @@ export interface RouteCandidate extends FoundRoute {
 
 const M_PER_DEG = 111_195;
 
-/** Points every `stepM` along a polyline (always includes both ends). */
+/** Points every `stepM` along a polyline (always includes both ends). Single-pass O(N) walk. */
 export function resample(line: LatLng[], stepM: number): LatLng[] {
   if (line.length < 2) return line.slice();
   const cum = cumulativeDistances(line);
   const total = cum[cum.length - 1]!;
   const out: LatLng[] = [];
-  for (let a = 0; a < total; a += stepM) out.push(pointAlong(line, cum, a));
+  let idx = 0;
+  for (let a = 0; a < total; a += stepM) {
+    while (idx + 1 < line.length - 1 && cum[idx + 1]! <= a) idx++;
+    const seg = cum[idx + 1]! - cum[idx]!;
+    const f = seg > 0 ? Math.min(1, Math.max(0, (a - cum[idx]!) / seg)) : 0;
+    const p0 = line[idx]!;
+    const p1 = line[idx + 1]!;
+    out.push({ lat: p0.lat + (p1.lat - p0.lat) * f, lng: p0.lng + (p1.lng - p0.lng) * f });
+  }
   out.push(line[line.length - 1]!);
   return out;
 }
@@ -183,8 +191,12 @@ function cellOf(p: LatLng, gridM: number): [number, number] {
 /** Grid footprint of a polyline, for fast "is this point on that route" tests. */
 export class Footprint {
   private readonly cells = new Set<string>();
+  readonly pts: LatLng[];
+  readonly lengthM: number;
   constructor(line: LatLng[], readonly gridM: number = CANDIDATES.gridM) {
-    for (const p of resample(line, gridM / 2)) {
+    this.lengthM = polylineLengthM(line);
+    this.pts = resample(line, gridM / 2);
+    for (const p of this.pts) {
       const [y, x] = cellOf(p, gridM);
       this.cells.add(`${y}:${x}`);
     }
@@ -196,13 +208,30 @@ export class Footprint {
   }
 }
 
+/** WeakMap-backed footprint cache per polyline array & grid size (GC-safe, avoids rebuilding footprints in O(N²) loops). */
+const fpCache = new WeakMap<LatLng[], Map<number, Footprint>>();
+
+function cachedFootprint(line: LatLng[], gridM: number): Footprint {
+  let byGrid = fpCache.get(line);
+  if (!byGrid) {
+    byGrid = new Map();
+    fpCache.set(line, byGrid);
+  }
+  let fp = byGrid.get(gridM);
+  if (!fp) {
+    fp = new Footprint(line, gridM);
+    byGrid.set(gridM, fp);
+  }
+  return fp;
+}
+
 /** Length (m) of `line` that lies on any of `others`. */
 export function coveredLengthM(line: LatLng[], others: Footprint[], gridM: number = CANDIDATES.gridM): number {
   const step = gridM / 2;
-  const pts = resample(line, step);
+  const self = cachedFootprint(line, gridM);
   let n = 0;
-  for (const p of pts) if (others.some((f) => f.covers(p))) n++;
-  return Math.min(n * step, polylineLengthM(line));
+  for (const p of self.pts) if (others.some((f) => f.covers(p))) n++;
+  return Math.min(n * step, self.lengthM);
 }
 
 export function polylineLengthM(line: LatLng[]): number {
@@ -217,13 +246,18 @@ export interface Overlap {
 }
 
 export function overlap(a: LatLng[], b: LatLng[], cfg: CandidateConfig = CANDIDATES): Overlap {
-  const la = polylineLengthM(a);
-  const lb = polylineLengthM(b);
-  const sa = coveredLengthM(a, [new Footprint(b, cfg.gridM)], cfg.gridM);
-  const sb = coveredLengthM(b, [new Footprint(a, cfg.gridM)], cfg.gridM);
+  const fa = cachedFootprint(a, cfg.gridM);
+  const fb = cachedFootprint(b, cfg.gridM);
+  const step = cfg.gridM / 2;
+  let na = 0;
+  for (const p of fa.pts) if (fb.covers(p)) na++;
+  const sa = Math.min(na * step, fa.lengthM);
+  let nb = 0;
+  for (const p of fb.pts) if (fa.covers(p)) nb++;
+  const sb = Math.min(nb * step, fb.lengthM);
   const shared = Math.min(sa, sb);
-  const shorter = Math.min(la, lb);
-  return { ratio: shorter > 0 ? shared / shorter : 1, uniqueA: la - sa, uniqueB: lb - sb };
+  const shorter = Math.min(fa.lengthM, fb.lengthM);
+  return { ratio: shorter > 0 ? shared / shorter : 1, uniqueA: fa.lengthM - sa, uniqueB: fb.lengthM - sb };
 }
 
 export function isDistinct(a: LatLng[], b: LatLng[], cfg: CandidateConfig = CANDIDATES): boolean {
@@ -668,8 +702,13 @@ export interface LearnedRoute {
 }
 
 export function endpointsMatch(a: LatLng, b: LatLng, from: LatLng, to: LatLng, lengthM: number, cfg: CandidateConfig): boolean {
-  const tol = Math.max(cfg.learned.endpointM, cfg.learned.endpointFrac * lengthM);
-  return haversineM(a, from) <= tol && haversineM(b, to) <= tol;
+  const directM = haversineM(from, to);
+  const tol = Math.min(Math.max(cfg.learned.endpointM, cfg.learned.endpointFrac * lengthM), Math.max(150, directM * 0.4));
+  const dStart = haversineM(a, from);
+  const dEnd = haversineM(b, to);
+  if (dStart > tol || dEnd > tol) return false;
+  // Never match a trace driven in the opposite direction (B→A) for an A→B search on short local trips.
+  return dStart + dEnd < haversineM(a, to) + haversineM(b, from);
 }
 
 /**

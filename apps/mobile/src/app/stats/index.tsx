@@ -51,6 +51,7 @@ const CAT_LOOK: Record<CategoryId, { icon: IconName; color: string }> = {
   score: { icon: 'shield', color: palette.ok },
   smooth: { icon: 'butter', color: '#F59E0B' },
   noBrake: { icon: 'brake', color: '#E5484D' },
+  topSpeed: { icon: 'speed', color: '#FFB224' },
   homeRuns: { icon: 'home', color: '#5B6CFF' },
   nightOwl: { icon: 'owl', color: '#3C46C9' },
   earlyBird: { icon: 'sunrise', color: '#EA580C' },
@@ -66,6 +67,7 @@ const HERO: { k: 'drivenKm' | 'walkedKm'; icon: IconName; tint: string; label: '
 
 function catValue(c: Category, v: number): string {
   if (c.unit === 'km') return formatKm(v, lang());
+  if (c.unit === 'kph') return formatSpeed(v, lang());
   if (c.unit === 'per100') return `${v} ${t('lb.per100')}`;
   return String(v);
 }

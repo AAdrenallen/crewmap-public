@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, StyleSheet, Text, View, type LayoutRectangle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Rect } from '@crewmap/shared/emotes';
 import { t } from '@crewmap/shared/i18n';
@@ -39,7 +39,7 @@ import {
   useMomentNotice,
   useMotion,
 } from '../ui/drive/DriveHud';
-import { MusicButton, MusicCard } from '../ui/drive/Music';
+import { MusicButton, MusicCard, MusicDrawer } from '../ui/drive/Music';
 import { friendContext, hudPlan } from '../ui/drive/driveUx';
 import { Bouncy, ControlGroup, Icon, IconButton, Toast } from '../ui/kit';
 import { useLayoutMode } from '../ui/layout';
@@ -153,10 +153,12 @@ export default function Home() {
     [],
   );
 
-  // Hardware back while guiding asks before ending; everywhere else back behaves normally.
+  // Hardware back while guiding on Home asks before ending; when a child screen (like /drive-along) is open, back closes that screen instead.
+  const segments = useSegments();
+  const homeFocused = (segments as string[]).length === 0;
   const navActive = nav?.active === true;
   useEffect(() => {
-    if (!navActive) return;
+    if (!navActive || !homeFocused) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       Alert.alert(t('nav.endConfirm'), '', [
         { text: t('common.cancel'), style: 'cancel' },
@@ -165,7 +167,7 @@ export default function Home() {
       return true;
     });
     return () => sub.remove();
-  }, [navActive]);
+  }, [navActive, homeFocused]);
 
   const moment = notice.moment;
   const pill = notice.action === 'pill';
@@ -189,6 +191,7 @@ export default function Home() {
         onViewport={onViewport}
         ornaments={ornaments}
         onFriendPress={openFriend}
+        onSelfPress={() => router.push('/avatar')}
         onHazardPress={(h) => router.push({ pathname: '/hazard/[id]', params: { id: h.id } })}
         onPlacePress={(p) => router.push({ pathname: '/place/[id]', params: { id: p.id } })}
         onLongPress={(lat, lng) => {
@@ -316,7 +319,9 @@ export default function Home() {
               ? { top: insets.top + 8 }
               : {
                   bottom: driving
-                    ? insets.bottom + 190
+                    ? layout.report
+                      ? Math.max(insets.bottom + 264, lay.height - layout.report.y + 12)
+                      : insets.bottom + 264
                     : wide && showSheet
                       ? insets.bottom + 24
                       : aboveCarousel,
@@ -479,6 +484,7 @@ export default function Home() {
 
       {/* Chat bubbles: left edge, below the top chrome and the driving pill row; the side controls sit on the right. */}
       <MsgBlips top={chromeBottom + 60} left={lay.gutterL} />
+      {driving && <MusicDrawer />}
       {locating && (
         <LocatePill
           id={locating}

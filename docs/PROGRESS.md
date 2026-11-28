@@ -159,9 +159,9 @@ Owner decisions: disk/CPU for an OSRM Québec+Ontario extract on the home PC (~1
 - Unverified on device: Overpass reachability from the phone, cell persistence across restarts, camera markers/alerts
   for `osm` cameras in Ontario. Rejected: Ontario 511 (key + terms behind login), ECCC alerts (deferred, polygons).
 
-## D63 — Crew-sensor insights (2026-11-27)
+## D63 — Crew-sensor insights (2026-11-27, wired 2026-11-28)
 - Done: road roughness/pothole cells, learned stop delays, leave-by in `packages/shared/src/insight/` with tests. Source sweep + ideas backlog in RESEARCH.md.
-- Not wired into the app; thresholds untuned on real drives.
+- Wired into the app (`apps/mobile/src/core/tripInsights.ts`): door-to-door typical drive time + `leaveBy` advice on `place/[id].tsx` and `route.tsx` from SQLite trip thumbnails; bounded 60 s IMU roughness pooling + learned stop delays in `tracking.ts` with a calm 1-tap pothole prompt on `TripEndCard` (`DriveHud.tsx`). Thresholds still untuned on real drives.
 
 ## D64 — Free map-point feeds, official Québec fuel prices (2026-11-27)
 - Done: Régie essence Québec station prices (chore peer, 10 min, conditional GET, kv cache, shared as `pois`), MTMD
@@ -222,3 +222,12 @@ Owner decisions: disk/CPU for an OSRM Québec+Ontario extract on the home PC (~1
   card), MediaStore share sheet, camera capture + compression sizes, two-phone delivery of posts/photos/reactions,
   recap card timing after a real group drive, light/dark/landscape layouts.
 - UI review: structure, i18n parity (72 mem keys en/fr/ru), a11y, playback controls already fine; added success haptic on RecapCard appear.
+
+## Status 2026-11-28 (audit + user-reported fixes & polish)
+- Codebase-wide audit & optimizations: re-enabled live background sync (`CrewmapSyncTaskService`), wired background check-in notification sound/vibration, tightened thresholds/caps and P2P/SQLite/map hot paths (`codebase-audit` pass, 100% tests green).
+- Map appearance setting: Adaptive / Light / Dark segmented control (`set.mapTheme`) wired across `CrewMapView`, `trips/[id]`, `places/edit` and `PlaybackMap` (skips the 60 s sun-angle timer when pinned to Light or Dark).
+- Polyphonic emote audio: native 24-stream `EmoteSoundPool.kt` mixes simultaneous/streak emotes additively without cutting each other off while transiently ducking external music; layered streak sting + announcer voice; single-init `mixWithOthers` JS fallback.
+- Fuel prices & station coverage: pure-JS RFC 1952/1951 `.geojson.gz` gunzip (`packages/hazards/src/gunzip.ts`) so `stations.geojson.gz` decodes reliably when served without `Content-Encoding`; broadened `regie.ts` and `osmPois.ts` (convenience-store / regional fuel brands); viewport-driven POI refresh on every active phone; Regular price badges on the map (`PoisLayer.tsx`) and full multi-grade breakdown + primary Directions CTA on `poi/[id].tsx`.
+- Navigation UX & routing fixes: dual screen wake lock (`expo-keep-awake` + native `FLAG_KEEP_SCREEN_ON`) while `nav.active`; focus-scoped `useBackClose` so swiping back from `/drive-along` returns to navigation instead of prompting to end it; fixed reversed short-trip directions (fresh fix check before preview, speed-gated departure heading, directional `endpointsMatch` guard on `< 1.5 km` traces, interactive From / To + Swap on `/route`).
+- Chat bubbles & group poses: spring-animated incoming message preview pills + compact floating `MiniChatPopover` (`MsgBlips.tsx`, tap outside closes popover and bubble); 8 3D avatar action poses (`poseSheet`) × 18 non-overlapping formations = 600+ freeze-frame group scenes (`groupPoses.ts`, `clusterCrew`) with per-open pose rotation (`usePoseSeed`).
+- In-app music drawer & battery polish: repositioned GPS recenter above `ReportBar`; replaced 50/50 split-screen launch with slide-in `MusicDrawer.tsx` (`MediaBrowser` playlists + Quick Mixes + Up Next queue) and swipe-to-dismiss on `MusicCard.tsx`; paused 10 Hz / 4 Hz / 20 Hz map & playback timers when backgrounded and gated `HazardLayers` 60 s refresh on active fresh halos; wired D63 insights (`tripInsights.ts`).

@@ -160,9 +160,18 @@ export class CheckInMonitor {
 
   fix(f: LocationSample): CheckInAction[] {
     if (f.accuracy > this.th.maxAccuracyM) return [];
+    const prev = this.recent.length > 0 ? this.recent[this.recent.length - 1]! : null;
     this.recent.push(f);
-    while (this.recent.length && f.t - this.recent[0]!.t > APPROACH_KEEP_S * 1000) this.recent.shift();
-    const speed = f.speed ?? 0;
+    if (this.recent.length > 64 && f.t - this.recent[0]!.t > APPROACH_KEEP_S * 1000) {
+      let cut = 0;
+      while (cut < this.recent.length && f.t - this.recent[cut]!.t > APPROACH_KEEP_S * 1000) cut++;
+      if (cut >= 32) this.recent.splice(0, cut);
+    }
+    let speed = f.speed;
+    if (speed === null) {
+      const dt = prev ? (f.t - prev.t) / 1000 : 0;
+      speed = prev && dt > 0 ? haversineM(prev, f) / dt : 0;
+    }
     if (this.stop) {
       const d = haversineM(this.stop, f);
       const moving = d > this.th.leaveM || (d > Math.max(this.th.stopRadiusM, f.accuracy) && speed >= this.th.stopSpeedMps);
